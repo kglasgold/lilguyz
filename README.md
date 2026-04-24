@@ -53,13 +53,6 @@ npm run electron:build
 
 Outputs to `dist-electron/mac-arm64/lilguyz.app`
 
-## Easter eggs
-
-Type these into the input:
-- `dance party`
-- `bohemian grove`
-- `murder scene`
-
 ## Tech
 
 - React 19 + Vite

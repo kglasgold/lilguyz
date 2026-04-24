@@ -35,9 +35,19 @@ app.get("/api/greeting", async (_request, response, next) => {
       response.json({ greeting: null, llm: false });
       return;
     }
+    const seed = Math.floor(Math.random() * 99999);
     const greeting = await callLLM(
-      "You are a fun, quirky AI assistant. Generate a single short placeholder prompt (under 8 words) for a text input that asks the user what they want to work on. Be creative, goofy, and different every time. Examples: \"what are you noodling on?\", \"drop a task on me boss\", \"what needs wrangling today?\". Return ONLY the text, no quotes, no punctuation at the start.",
-      "generate one",
+      `You generate fun, quirky placeholder text for a task input field. Each must be wildly different in tone, style, and vocabulary. Under 8 words. No quotes. No period at the end. Lowercase.
+
+Never repeat these — they're already used:
+- what's cooking in that brain of yours
+- tell me what to track
+- drop a task on me boss
+- what needs wrangling today
+- what are you noodling on
+
+Go weird. Be funny. Surprise me.`,
+      `seed: ${seed} — generate one completely new placeholder`,
     );
     response.json({ greeting: greeting?.trim() || null, llm: true });
   } catch (error) {

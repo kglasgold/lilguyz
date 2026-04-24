@@ -175,7 +175,7 @@ export default function App() {
   const [prSummary, setPrSummary] = useState(null);
   const [issues, setIssues] = useState([]);
   const [issuesLoaded, setIssuesLoaded] = useState(false);
-  const [greeting, setGreeting] = useState("Tell me what to track...");
+  const [greeting, setGreeting] = useState("");
   const [message, setMessage] = useState("");
   const [lastAgent, setLastAgent] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -433,7 +433,7 @@ export default function App() {
   return (
     <main className={`shell ${showLanding ? "landing" : ""}`}>
       <header className="topbar">
-        <button type="button" className="brand" onClick={() => setForceLanding(true)}>
+        <button type="button" className="brand" onClick={() => { setForceLanding(true); fetchGreeting(); }}>
           <PixelSprite type="boss" size={20} />
           <span>lilguyz</span>
         </button>

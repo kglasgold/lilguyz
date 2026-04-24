@@ -10,7 +10,7 @@ const rootDir = isPackaged
 function loadEnv() {
   const candidates = [
     path.join(rootDir, ".env"),
-    path.join(app.getPath("home"), ".assistant-bot", ".env"),
+    path.join(app.getPath("home"), ".lilguyz", ".env"),
     path.join(__dirname, "..", ".env"),
   ];
 

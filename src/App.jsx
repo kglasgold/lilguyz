@@ -424,7 +424,7 @@ export default function App() {
       <header className="topbar">
         <button type="button" className="brand" onClick={() => setForceLanding(true)}>
           <PixelSprite type="boss" size={20} />
-          <span>assistant-bot</span>
+          <span>lilguyz</span>
         </button>
       </header>
 

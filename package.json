@@ -1,5 +1,5 @@
 {
-  "name": "assistant-bot",
+  "name": "lilguyz",
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.js",
@@ -26,8 +26,8 @@
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "com.assistant-bot.app",
-    "productName": "assistant-bot",
+    "appId": "com.lilguyz.app",
+    "productName": "lilguyz",
     "mac": {
       "target": "dmg",
       "category": "public.app-category.productivity",

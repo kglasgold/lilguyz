@@ -1,4 +1,4 @@
-# assistant-bot
+# lilguyz
 
 A local desktop tool with tiny 8-bit agents that help you track work. Talk to the boss — it routes your request to the right agent.
 
@@ -11,8 +11,8 @@ A local desktop tool with tiny 8-bit agents that help you track work. Talk to th
 ## Setup
 
 ```bash
-git clone https://github.com/yourname/assistant-bot.git
-cd assistant-bot
+git clone https://github.com/kglasgold/lilguyz.git
+cd lilguyz
 npm install
 ```
 
@@ -51,7 +51,7 @@ npm run electron
 npm run electron:build
 ```
 
-Outputs to `dist-electron/mac-arm64/assistant-bot.app`
+Outputs to `dist-electron/mac-arm64/lilguyz.app`
 
 ## Easter eggs
 

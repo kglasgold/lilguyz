@@ -225,7 +225,7 @@ app.use((error, _request, response, _next) => {
 export function startServer() {
   return new Promise((resolve) => {
     app.listen(port, "127.0.0.1", () => {
-      console.log(`assistant-bot listening on http://127.0.0.1:${port}`);
+      console.log(`lilguyz listening on http://127.0.0.1:${port}`);
       resolve(port);
     });
   });

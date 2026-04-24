@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { classifyInstruction, extractAssignee, extractDescription, extractTitle } from "./classify.js";
-import { fetchOpenPRs } from "./github.js";
+import { classifyWithLLM, classifyRegex, extractAssignee, extractDescription, extractTitle } from "./classify.js";
+import { callLLM, isLLMConfigured } from "./llm.js";
+import { fetchOpenPRs, summarizePRs } from "./github.js";
 import { createIssue, fetchMyIssues, isConfigured as linearConfigured } from "./linear.js";
 import { parseWatchInstruction } from "./parseWatch.js";
 import {
@@ -28,6 +29,22 @@ app.get("/api/health", (_request, response) => {
   response.json({ ok: true });
 });
 
+app.get("/api/greeting", async (_request, response, next) => {
+  try {
+    if (!isLLMConfigured()) {
+      response.json({ greeting: null, llm: false });
+      return;
+    }
+    const greeting = await callLLM(
+      "You are a fun, quirky AI assistant. Generate a single short placeholder prompt (under 8 words) for a text input that asks the user what they want to work on. Be creative, goofy, and different every time. Examples: \"what are you noodling on?\", \"drop a task on me boss\", \"what needs wrangling today?\". Return ONLY the text, no quotes, no punctuation at the start.",
+      "generate one",
+    );
+    response.json({ greeting: greeting?.trim() || null, llm: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/issues", async (_request, response, next) => {
   try {
     if (!linearConfigured()) {
@@ -44,7 +61,8 @@ app.get("/api/issues", async (_request, response, next) => {
 app.get("/api/prs", async (_request, response, next) => {
   try {
     const prs = await fetchOpenPRs();
-    response.json({ prs });
+    const summary = await summarizePRs(prs);
+    response.json({ prs, summary });
   } catch (error) {
     next(error);
   }
@@ -71,15 +89,17 @@ app.post("/api/tasks", async (request, response, next) => {
       return;
     }
 
-    const agent = classifyInstruction(instruction);
+    const llmResult = await classifyWithLLM(instruction);
+    const agent = llmResult?.agent || classifyRegex(instruction);
+    const title = llmResult?.title || extractTitle(instruction);
+    const assignee = llmResult?.assignee || extractAssignee(instruction);
+    const description = llmResult?.description || extractDescription(instruction);
+
     const parsed = parseWatchInstruction(instruction, agent);
 
     let linearIssue = null;
     if (agent === "linear" && linearConfigured()) {
       try {
-        const title = extractTitle(instruction);
-        const assignee = extractAssignee(instruction);
-        const description = extractDescription(instruction);
         linearIssue = await createIssue(title, description, assignee);
       } catch (err) {
         console.error("Linear issue creation failed:", err.message);
@@ -97,8 +117,9 @@ app.post("/api/tasks", async (request, response, next) => {
     const watches = await listWatches();
     const counts = await countByAgent();
     const linearConfiguredFlag = linearConfigured();
+    const usedLLM = Boolean(llmResult);
 
-    response.status(201).json({ watch, agent, linearConfigured: linearConfiguredFlag, watches, counts });
+    response.status(201).json({ watch, agent, linearConfigured: linearConfiguredFlag, usedLLM, watches, counts });
   } catch (error) {
     next(error);
   }
@@ -114,15 +135,17 @@ app.post("/api/watches", async (request, response, next) => {
       return;
     }
 
-    const agent = classifyInstruction(instruction);
+    const llmResult = await classifyWithLLM(instruction);
+    const agent = llmResult?.agent || classifyRegex(instruction);
+    const title = llmResult?.title || extractTitle(instruction);
+    const assignee = llmResult?.assignee || extractAssignee(instruction);
+    const description = llmResult?.description || extractDescription(instruction);
+
     const parsed = parseWatchInstruction(instruction, agent);
 
     let linearIssue = null;
     if (agent === "linear" && linearConfigured()) {
       try {
-        const title = extractTitle(instruction);
-        const assignee = extractAssignee(instruction);
-        const description = extractDescription(instruction);
         linearIssue = await createIssue(title, description, assignee);
       } catch (err) {
         console.error("Linear issue creation failed:", err.message);
@@ -210,7 +233,8 @@ setInterval(() => {
 
 if (existsSync(distDir)) {
   app.use(express.static(distDir));
-  app.get(/.*/, (_request, response) => {
+  app.use((_request, response, next) => {
+    if (_request.method !== "GET" || _request.path.startsWith("/api")) return next();
     response.sendFile(join(distDir, "index.html"));
   });
 }

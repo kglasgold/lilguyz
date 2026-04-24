@@ -8,11 +8,15 @@ const rootDir = isPackaged
   : path.join(__dirname, "..");
 
 function loadEnv() {
-  const candidates = [
-    path.join(rootDir, ".env"),
-    path.join(app.getPath("home"), ".lilguyz", ".env"),
-    path.join(__dirname, "..", ".env"),
-  ];
+  const candidates = isPackaged
+    ? [
+        path.join(app.getPath("home"), ".lilguyz", ".env"),
+        path.join(rootDir, ".env"),
+      ]
+    : [
+        path.join(__dirname, "..", ".env"),
+        path.join(app.getPath("home"), ".lilguyz", ".env"),
+      ];
 
   for (const envPath of candidates) {
     try {

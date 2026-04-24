@@ -29,7 +29,7 @@
     "appId": "com.lilguyz.app",
     "productName": "lilguyz",
     "mac": {
-      "target": "dmg",
+      "target": "dir",
       "category": "public.app-category.productivity",
       "icon": "assets/icon.icns"
     },

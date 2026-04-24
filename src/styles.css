@@ -44,6 +44,7 @@ input {
   max-width: 800px;
   margin: 0 auto;
   padding: 0 1.5rem 4rem;
+  padding-top: env(titlebar-area-height, 0px);
 }
 
 /* ── Topbar ── */
@@ -53,6 +54,13 @@ input {
   align-items: center;
   height: 52px;
   margin-bottom: 2rem;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.topbar * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .brand {
@@ -66,6 +74,7 @@ input {
   background: none;
   border: none;
   padding: 0;
+  padding-left: 70px;
   cursor: pointer;
   transition: color 150ms ease;
 }
@@ -575,6 +584,29 @@ a.linearLink:hover {
   padding: 4rem 0;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+/* ── LLM Summary ── */
+
+.llmSummary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.llmSummary .pixelSprite {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.llmSummary p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* ── Issue Cards ── */

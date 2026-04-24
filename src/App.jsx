@@ -172,8 +172,10 @@ export default function App() {
   const [counts, setCounts] = useState({});
   const [prs, setPrs] = useState([]);
   const [prsLoaded, setPrsLoaded] = useState(false);
+  const [prSummary, setPrSummary] = useState(null);
   const [issues, setIssues] = useState([]);
   const [issuesLoaded, setIssuesLoaded] = useState(false);
+  const [greeting, setGreeting] = useState("Tell me what to track...");
   const [message, setMessage] = useState("");
   const [lastAgent, setLastAgent] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -229,6 +231,7 @@ export default function App() {
     void refreshWatches();
     void fetchPRs();
     void fetchIssues();
+    void fetchGreeting();
     const interval = setInterval(() => {
       void refreshWatches({ quiet: true });
     }, 10_000);
@@ -245,10 +248,18 @@ export default function App() {
     try {
       const payload = await apiGet("/api/prs");
       setPrs(payload.prs || []);
+      setPrSummary(payload.summary || null);
       setPrsLoaded(true);
     } catch (err) {
       console.error("Failed to fetch PRs:", err.message);
     }
+  }
+
+  async function fetchGreeting() {
+    try {
+      const payload = await apiGet("/api/greeting");
+      if (payload.greeting) setGreeting(payload.greeting);
+    } catch {}
   }
 
   async function fetchIssues() {
@@ -397,7 +408,7 @@ export default function App() {
       <input
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
-        placeholder="Tell me what to track..."
+        placeholder={greeting}
         disabled={loading}
       />
       <button
@@ -496,7 +507,7 @@ export default function App() {
           </section>
 
           {agentFilter === "pr" ? (
-            <PRList prs={prs} loaded={prsLoaded} onRefresh={fetchPRs} />
+            <PRList prs={prs} loaded={prsLoaded} summary={prSummary} onRefresh={fetchPRs} />
           ) : agentFilter === "linear" ? (
             <IssueList issues={issues} loaded={issuesLoaded} />
           ) : !initialLoad && (
@@ -927,7 +938,7 @@ function IssueCard({ issue }) {
   );
 }
 
-function PRList({ prs, loaded, onRefresh }) {
+function PRList({ prs, loaded, summary, onRefresh }) {
   if (!loaded) {
     return (
       <div className="emptyState">
@@ -952,6 +963,12 @@ function PRList({ prs, loaded, onRefresh }) {
 
   return (
     <div className="watchesLayout">
+      {summary && (
+        <div className="llmSummary">
+          <PixelSprite type="pr" size={18} />
+          <p>{summary}</p>
+        </div>
+      )}
       {needsAttention.length > 0 && (
         <section className="watchSection due">
           <div className="sectionHead">

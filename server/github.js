@@ -61,9 +61,9 @@ let cachedPrs = null;
 let lastFetch = 0;
 const CACHE_TTL = 30_000;
 
-export async function fetchOpenPRs() {
+export async function fetchOpenPRs(options = {}) {
   const now = Date.now();
-  if (cachedPrs && now - lastFetch < CACHE_TTL) {
+  if (!options.force && cachedPrs && now - lastFetch < CACHE_TTL) {
     return cachedPrs;
   }
 
@@ -114,35 +114,4 @@ function normalizePR(node) {
     reviewers,
     status,
   };
-}
-
-import { callLLM, isLLMConfigured } from "./llm.js";
-
-let summaryCache = null;
-let summaryLastFetch = 0;
-const SUMMARY_CACHE_TTL = 60_000;
-
-export async function summarizePRs(prs) {
-  if (!isLLMConfigured() || !prs?.length) return null;
-
-  const now = Date.now();
-  if (summaryCache && now - summaryLastFetch < SUMMARY_CACHE_TTL) {
-    return summaryCache;
-  }
-
-  const prList = prs.map((p) =>
-    `#${p.number} "${p.title}" — ${p.status}, +${p.additions}/-${p.deletions}, branch: ${p.branch}`
-  ).join("\n");
-
-  const summary = await callLLM(
-    "You are PR Shepherd, a helpful assistant that summarizes open pull requests. Be concise and actionable. Use 2-3 short sentences max. Mention which PRs need attention and which are ready to merge. Don't use bullet points.",
-    `Here are my open PRs:\n${prList}`,
-  );
-
-  if (summary) {
-    summaryCache = summary;
-    summaryLastFetch = now;
-  }
-
-  return summary;
 }

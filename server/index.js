@@ -3,11 +3,14 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { classifyWithLLM, classifyRegex, extractAssignee, extractDescription, extractTitle } from "./classify.js";
+import { classifyWithLLM, classifyRegex, extractAssignee, extractDescription, extractTitle, isReminderInstruction } from "./classify.js";
 import { callLLM, isLLMConfigured } from "./llm.js";
-import { fetchOpenPRs, summarizePRs } from "./github.js";
-import { createIssue, fetchMyIssues, isConfigured as linearConfigured } from "./linear.js";
+import { fetchOpenPRs } from "./github.js";
+import { createIssue, fetchMyIssues, isConfigured as linearConfigured, updateIssueAssignee, updateIssueStatus } from "./linear.js";
+import { handleLinearAction } from "./linearActions.js";
+import { handleNoteInstruction } from "./notesGuy.js";
 import { parseWatchInstruction } from "./parseWatch.js";
+import { deleteNoteTheme, deleteSubNote, listNoteThemes } from "./noteStore.js";
 import {
   countByAgent,
   createWatch,
@@ -55,24 +58,109 @@ Go weird. Be funny. Surprise me.`,
   }
 });
 
-app.get("/api/issues", async (_request, response, next) => {
+app.get("/api/issues", async (request, response, next) => {
   try {
+    response.set("Cache-Control", "no-store");
+
     if (!linearConfigured()) {
-      response.json({ issues: [], configured: false });
+      response.json({ issues: [], configured: false, syncedAt: new Date().toISOString(), statusCounts: {} });
       return;
     }
-    const issues = await fetchMyIssues();
-    response.json({ issues, configured: true });
+    const issues = await fetchMyIssues({ force: request.query.refresh === "1" });
+    response.json({ issues, configured: true, syncedAt: new Date().toISOString(), statusCounts: countIssueStatuses(issues) });
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/prs", async (_request, response, next) => {
+app.post("/api/issues/:identifier/status", async (request, response, next) => {
   try {
-    const prs = await fetchOpenPRs();
-    const summary = await summarizePRs(prs);
-    response.json({ prs, summary });
+    if (!linearConfigured()) {
+      response.status(400).json({ error: "LINEAR_API_KEY is not configured" });
+      return;
+    }
+
+    const status = request.body?.status;
+    if (typeof status !== "string" || !status.trim()) {
+      response.status(400).json({ error: "status is required" });
+      return;
+    }
+
+    const linearAction = await updateIssueStatus(request.params.identifier, status);
+    const issues = await fetchMyIssues({ force: true });
+    response.json({ linearAction, issues, statusCounts: countIssueStatuses(issues), syncedAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/issues/:identifier/assignee", async (request, response, next) => {
+  try {
+    if (!linearConfigured()) {
+      response.status(400).json({ error: "LINEAR_API_KEY is not configured" });
+      return;
+    }
+
+    const assignee = request.body?.assignee;
+    if (assignee !== null && typeof assignee !== "string") {
+      response.status(400).json({ error: "assignee must be a string or null" });
+      return;
+    }
+
+    const linearAction = await updateIssueAssignee(request.params.identifier, assignee);
+    const issues = await fetchMyIssues({ force: true });
+    response.json({ linearAction, issues, statusCounts: countIssueStatuses(issues), syncedAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/prs", async (request, response, next) => {
+  try {
+    response.set("Cache-Control", "no-store");
+    const prs = await fetchOpenPRs({ force: request.query.refresh === "1" });
+    response.json({ prs, syncedAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/notes", async (_request, response, next) => {
+  try {
+    const themes = await listNoteThemes();
+    response.json({ themes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/notes/:themeId", async (request, response, next) => {
+  try {
+    const deleted = await deleteNoteTheme(request.params.themeId);
+
+    if (!deleted) {
+      response.status(404).json({ error: "note theme not found" });
+      return;
+    }
+
+    const themes = await listNoteThemes();
+    response.json({ deleted, themes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/notes/:themeId/notes/:noteId", async (request, response, next) => {
+  try {
+    const deleted = await deleteSubNote(request.params.themeId, request.params.noteId);
+
+    if (!deleted) {
+      response.status(404).json({ error: "note not found" });
+      return;
+    }
+
+    const themes = await listNoteThemes();
+    response.json({ deleted, themes });
   } catch (error) {
     next(error);
   }
@@ -101,9 +189,45 @@ app.post("/api/tasks", async (request, response, next) => {
 
     const llmResult = await classifyWithLLM(instruction);
     const agent = llmResult?.agent || classifyRegex(instruction);
+    if (!agent || (agent === "watcher" && !isReminderInstruction(instruction))) {
+      response.status(400).json({ error: "I can only send Jared explicit reminders like \"remind me to...\"." });
+      return;
+    }
     const title = llmResult?.title || extractTitle(instruction);
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
+
+    if (agent === "notes") {
+      const noteResult = await handleNoteInstruction(instruction);
+      const notes = await listNoteThemes();
+      const watches = await listWatches();
+      const counts = await countByAgent();
+      const usedLLM = Boolean(llmResult);
+
+      response.status(201).json({ noteResult, agent, usedLLM, notes, watches, counts, watch: null });
+      return;
+    }
+
+    if (agent === "linear" && linearConfigured()) {
+      const linearAction = await handleLinearAction(instruction);
+      if (linearAction) {
+        const issues = await fetchMyIssues({ force: true });
+        const watches = await listWatches();
+        const counts = await countByAgent();
+
+        response.status(200).json({
+          linearAction,
+          agent,
+          linearConfigured: true,
+          issues,
+          issueStatusCounts: countIssueStatuses(issues),
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+    }
 
     const parsed = parseWatchInstruction(instruction, agent);
 
@@ -147,9 +271,43 @@ app.post("/api/watches", async (request, response, next) => {
 
     const llmResult = await classifyWithLLM(instruction);
     const agent = llmResult?.agent || classifyRegex(instruction);
+    if (!agent || (agent === "watcher" && !isReminderInstruction(instruction))) {
+      response.status(400).json({ error: "I can only send Jared explicit reminders like \"remind me to...\"." });
+      return;
+    }
     const title = llmResult?.title || extractTitle(instruction);
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
+
+    if (agent === "notes") {
+      const noteResult = await handleNoteInstruction(instruction);
+      const notes = await listNoteThemes();
+      const watches = await listWatches();
+      const counts = await countByAgent();
+
+      response.status(201).json({ noteResult, agent, notes, watches, counts, watch: null });
+      return;
+    }
+
+    if (agent === "linear" && linearConfigured()) {
+      const linearAction = await handleLinearAction(instruction);
+      if (linearAction) {
+        const issues = await fetchMyIssues({ force: true });
+        const watches = await listWatches();
+        const counts = await countByAgent();
+
+        response.status(200).json({
+          linearAction,
+          agent,
+          issues,
+          issueStatusCounts: countIssueStatuses(issues),
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+    }
 
     const parsed = parseWatchInstruction(instruction, agent);
 
@@ -234,6 +392,14 @@ app.delete("/api/watches/:id", async (request, response, next) => {
     next(error);
   }
 });
+
+function countIssueStatuses(issues) {
+  return issues.reduce((counts, issue) => {
+    const type = issue.statusType || "unknown";
+    counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {});
+}
 
 setInterval(() => {
   markDueWatches().catch((error) => {

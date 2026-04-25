@@ -11,8 +11,9 @@ const ROUTER_PROMPT = `You are a router for a task management app called lilguyz
 Routing rules:
 - "linear": tasks, tickets, issues, sprints, anything mentioning Linear or issue keys like FIN-3, or creating/tracking work items
 - "pr": pull requests, reviews, CI, merging, code review, anything GitHub PR related
-- "notes": notes, docs, documents, meetings, standups, agendas, recaps
-- "watcher": generic reminders, timers, or anything that doesn't clearly fit above
+- "notes": notes, docs, documents, meetings, standups, agendas, recaps, or memory/search questions like "what did I say about billing?"
+- "watcher": only explicit reminders, timers, alarms, or watch prompts like "remind me to...", "set a timer...", or "watch this..."
+- If a prompt is a general question, memory lookup, or ambiguous instruction, do not route it to watcher.
 
 Return ONLY valid JSON, no explanation.`;
 
@@ -44,14 +45,21 @@ const PR_PATTERN = /\b(?:PR|pull\s*request|merge)\s*#?\d*/i;
 const PR_KEYWORDS = /\b(?:review|CI|merge|merged|approve|approval|blocker|conflict|rebase|cherry.?pick)\b/i;
 const LINEAR_KEYWORDS = /\b(?:task|ticket|issue|sprint|backlog|status|update|assign|priority|milestone|roadmap|epic)\b/i;
 const NOTES_KEYWORDS = /\b(?:note|notes|doc|docs|document|wiki|write.?up|meeting|standup|retro|recap|summary|agenda)\b/i;
+const NOTES_MEMORY_PATTERN = /\b(?:what|where|find|search|show|tell)\b.*\b(?:say|said|mention|remember|wrote|know|love|loved|like|liked)\b/i;
+const REMINDER_PATTERN = /\b(?:remind\s+me\s+to|remind\s+me\s+about|set\s+(?:a\s+)?timer|start\s+(?:a\s+)?timer|set\s+(?:an\s+)?alarm|watch\s+(?:this|for)|ping\s+me\s+(?:to|about|in|at))\b/i;
 
 export function classifyRegex(text) {
   const trimmed = text.trim();
 
   if (PR_PATTERN.test(trimmed) || PR_KEYWORDS.test(trimmed)) return "pr";
   if (ISSUE_PATTERN.test(trimmed) || LINEAR_KEYWORDS.test(trimmed)) return "linear";
-  if (NOTES_KEYWORDS.test(trimmed)) return "notes";
-  return "watcher";
+  if (NOTES_KEYWORDS.test(trimmed) || NOTES_MEMORY_PATTERN.test(trimmed)) return "notes";
+  if (isReminderInstruction(trimmed)) return "watcher";
+  return null;
+}
+
+export function isReminderInstruction(text) {
+  return REMINDER_PATTERN.test(text);
 }
 
 const PREAMBLE = /^(?:create|make|add|open|file|set\s*up|start)\s+(?:a\s+)?(?:new\s+)?(?:linear\s+)?(?:task|ticket|issue)\s*(?:to|for|about|that|called|named)?\s*/i;

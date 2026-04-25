@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const DANCE_PATTERN = /\bdance\s*party\b/i;
 const GROVE_PATTERN = /\bbohemian\s*grove\b/i;
 const MURDER_PATTERN = /\bmurder\s*scene\b/i;
+const FIGHT_CLUB_PATTERN = /\bfight\s*club\b/i;
 const EASTER_EGG_DURATION = 30_000;
 
 const AGENTS = [
@@ -14,20 +15,20 @@ const AGENTS = [
   },
   {
     id: "linear",
-    name: "PM-Bot",
+    name: "Mr. PM",
     description: "Tracks issues and task status.",
     pixel: "linear",
   },
   {
     id: "pr",
-    name: "PR Shepherd",
+    name: "PR Boy",
     description: "Review, CI, and merge blockers.",
     pixel: "pr",
   },
   {
     id: "notes",
-    name: "Notes Scout",
-    description: "Finds relevant notes and docs.",
+    name: "Notes Guy",
+    description: "Stores themes with sub notes.",
     pixel: "notes",
   },
 ];
@@ -172,12 +173,21 @@ export default function App() {
   const [counts, setCounts] = useState({});
   const [prs, setPrs] = useState([]);
   const [prsLoaded, setPrsLoaded] = useState(false);
-  const [prSummary, setPrSummary] = useState(null);
+  const [prsSyncing, setPrsSyncing] = useState(false);
+  const [prsSyncedAt, setPrsSyncedAt] = useState(null);
   const [issues, setIssues] = useState([]);
   const [issuesLoaded, setIssuesLoaded] = useState(false);
+  const [issuesSyncing, setIssuesSyncing] = useState(false);
+  const [issuesSyncedAt, setIssuesSyncedAt] = useState(null);
+  const [issueStatusCounts, setIssueStatusCounts] = useState({});
+  const [notes, setNotes] = useState([]);
+  const [notesLoaded, setNotesLoaded] = useState(false);
+  const [noteSearch, setNoteSearch] = useState(null);
   const [greeting, setGreeting] = useState("");
   const [message, setMessage] = useState("");
   const [lastAgent, setLastAgent] = useState(null);
+  const [agentReaction, setAgentReaction] = useState(null);
+  const [linearClarification, setLinearClarification] = useState(null);
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [agentFilter, setAgentFilter] = useState(null);
@@ -187,6 +197,7 @@ export default function App() {
   const [danceParty, setDanceParty] = useState(false);
   const [bohemianGrove, setBohemianGrove] = useState(false);
   const [murderScene, setMurderScene] = useState(false);
+  const [fightClub, setFightClub] = useState(false);
 
   const startDanceParty = useCallback(() => {
     setDanceParty(true);
@@ -209,8 +220,21 @@ export default function App() {
     setTimeout(() => setMurderScene(false), EASTER_EGG_DURATION);
   }, []);
 
+  const startFightClub = useCallback(() => {
+    setFightClub(true);
+    setInstruction("");
+    setMessage("");
+    setTimeout(() => setFightClub(false), EASTER_EGG_DURATION);
+  }, []);
+
+  function triggerAgentReaction(agent, type = "success") {
+    if (!agent) return;
+    setAgentReaction({ agent, type, key: Date.now() });
+    setTimeout(() => setAgentReaction(null), 900);
+  }
+
   const filteredWatches = useMemo(() => {
-    if (!agentFilter) return watches;
+    if (!agentFilter || agentFilter === "today") return watches;
     return watches.filter((w) => w.agent === agentFilter);
   }, [watches, agentFilter]);
 
@@ -228,10 +252,15 @@ export default function App() {
   );
 
   useEffect(() => {
-    void refreshWatches();
-    void fetchPRs();
-    void fetchIssues();
-    void fetchGreeting();
+    function refreshAfterWake() {
+      void refreshWatches();
+      void fetchPRs();
+      void fetchIssues({ force: true });
+      void fetchNotes();
+      void fetchGreeting();
+    }
+
+    refreshAfterWake();
     const interval = setInterval(() => {
       void refreshWatches({ quiet: true });
     }, 10_000);
@@ -241,17 +270,34 @@ export default function App() {
     const issueInterval = setInterval(() => {
       void fetchIssues();
     }, 60_000);
-    return () => { clearInterval(interval); clearInterval(prInterval); clearInterval(issueInterval); };
+    const removeResumeListener = window.lilguyz?.onSystemResume?.(refreshAfterWake);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshAfterWake();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(prInterval);
+      clearInterval(issueInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      removeResumeListener?.();
+    };
   }, []);
 
-  async function fetchPRs() {
+  async function fetchPRs(options = {}) {
+    if (options.force) setPrsSyncing(true);
     try {
-      const payload = await apiGet("/api/prs");
+      const path = options.force ? `/api/prs?refresh=1&t=${Date.now()}` : "/api/prs";
+      const payload = await apiGet(path, options.force ? { cache: "no-store" } : undefined);
       setPrs(payload.prs || []);
-      setPrSummary(payload.summary || null);
+      setPrsSyncedAt(payload.syncedAt || new Date().toISOString());
       setPrsLoaded(true);
     } catch (err) {
       console.error("Failed to fetch PRs:", err.message);
+      if (options.force) setMessage(err.message);
+    } finally {
+      if (options.force) setPrsSyncing(false);
     }
   }
 
@@ -262,13 +308,30 @@ export default function App() {
     } catch {}
   }
 
-  async function fetchIssues() {
+  async function fetchIssues(options = {}) {
+    if (options.force) setIssuesSyncing(true);
     try {
-      const payload = await apiGet("/api/issues");
+      const path = options.force ? `/api/issues?refresh=1&t=${Date.now()}` : "/api/issues";
+      const payload = await apiGet(path, options.force ? { cache: "no-store" } : undefined);
       setIssues(payload.issues || []);
       setIssuesLoaded(true);
+      setIssuesSyncedAt(payload.syncedAt || new Date().toISOString());
+      setIssueStatusCounts(payload.statusCounts || {});
     } catch (err) {
       console.error("Failed to fetch issues:", err.message);
+      if (options.force) setMessage(err.message);
+    } finally {
+      if (options.force) setIssuesSyncing(false);
+    }
+  }
+
+  async function fetchNotes() {
+    try {
+      const payload = await apiGet("/api/notes");
+      setNotes(payload.themes || []);
+      setNotesLoaded(true);
+    } catch (err) {
+      console.error("Failed to fetch notes:", err.message);
     }
   }
 
@@ -290,6 +353,14 @@ export default function App() {
           agent: w.agent,
         }));
         setNotifications((prev) => [...prev, ...newNotifs]);
+        newlyDue
+          .filter((w) => (w.agent || "watcher") === "watcher")
+          .forEach((w) => {
+            window.lilguyz?.notifyJared?.({
+              title: "Jared reminder",
+              body: w.instruction || w.subject || "Reminder due",
+            });
+          });
       }
 
       setInitialLoad(false);
@@ -318,6 +389,11 @@ export default function App() {
       return;
     }
 
+    if (FIGHT_CLUB_PATTERN.test(instruction)) {
+      startFightClub();
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
@@ -325,6 +401,23 @@ export default function App() {
       const payload = await apiPost("/api/tasks", {
         instruction: instruction.trim(),
       });
+      if (payload.notes) {
+        setNotes(payload.notes);
+        setNotesLoaded(true);
+      }
+      if (payload.noteResult?.action === "search_notes") {
+        setNoteSearch(payload.noteResult);
+      } else if (payload.agent === "notes") {
+        setNoteSearch(null);
+      }
+      if (payload.issues) {
+        setIssues(payload.issues);
+        setIssuesLoaded(true);
+        setIssuesSyncedAt(new Date().toISOString());
+      }
+      if (payload.issueStatusCounts) {
+        setIssueStatusCounts(payload.issueStatusCounts);
+      }
       setWatches(payload.watches);
       setCounts(payload.counts || {});
       setInstruction("");
@@ -333,17 +426,31 @@ export default function App() {
       setLastAgent(payload.agent);
       if (payload.agent === "linear" && payload.watch?.linearIssue) {
         setMessage(`${agentName} created ${payload.watch.linearIssue.identifier}`);
+        setLinearClarification(null);
+      } else if (payload.agent === "linear" && payload.linearAction) {
+        setAgentFilter("linear");
+        if (payload.linearAction.action === "clarify_issue") {
+          setLinearClarification(payload.linearAction);
+        } else {
+          setLinearClarification(null);
+        }
+        setMessage(formatLinearActionMessage(agentName, payload.linearAction));
       } else if (payload.agent === "linear" && !payload.linearConfigured) {
         setMessage(`${agentName} picked this up (no Linear key)`);
+      } else if (payload.agent === "notes") {
+        setAgentFilter("notes");
+        setMessage(formatNoteMessage(agentName, payload.noteResult));
       } else {
         setMessage(`${agentName} picked this up`);
       }
+      triggerAgentReaction(payload.agent, "success");
       setTimeout(() => {
         setMessage("");
         setLastAgent(null);
       }, 3000);
     } catch (error) {
       setMessage(error.message);
+      triggerAgentReaction(lastAgent, "failure");
     } finally {
       setLoading(false);
     }
@@ -365,6 +472,75 @@ export default function App() {
       setCounts(payload.counts || {});
     } catch (error) {
       setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteNoteTheme(theme) {
+    setLoading(true);
+    try {
+      const payload = await apiDelete(`/api/notes/${theme.id}`);
+      setNotes(payload.themes || []);
+      setMessage(`Deleted ${theme.title}`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteSubNote(theme, note) {
+    setLoading(true);
+    try {
+      const payload = await apiDelete(`/api/notes/${theme.id}/notes/${note.id}`);
+      setNotes(payload.themes || []);
+      setMessage(`Deleted note from ${theme.title}`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleIssueStatus(issue, status) {
+    await mutateIssue(`/api/issues/${issue.identifier}/status`, { status });
+  }
+
+  async function handleAssignIssueToMe(issue) {
+    await mutateIssue(`/api/issues/${issue.identifier}/assignee`, { assignee: "me" });
+  }
+
+  async function handleLinearClarificationChoice(candidate) {
+    if (!linearClarification) return;
+
+    if (linearClarification.requestedAction === "update_status") {
+      await mutateIssue(`/api/issues/${candidate.identifier}/status`, { status: linearClarification.statusName });
+      return;
+    }
+
+    if (linearClarification.requestedAction === "change_assignee") {
+      await mutateIssue(`/api/issues/${candidate.identifier}/assignee`, { assignee: linearClarification.assigneeName });
+    }
+  }
+
+  async function mutateIssue(path, body) {
+    setLoading(true);
+    try {
+      const payload = await apiPost(path, body);
+      setIssues(payload.issues || []);
+      setIssuesLoaded(true);
+      setIssuesSyncedAt(payload.syncedAt || new Date().toISOString());
+      setIssueStatusCounts(payload.statusCounts || {});
+      setLinearClarification(null);
+      if (payload.linearAction) {
+        setLastAgent("linear");
+        setMessage(formatLinearActionMessage("Mr. PM", payload.linearAction));
+        triggerAgentReaction("linear", "success");
+      }
+    } catch (error) {
+      setMessage(error.message);
+      triggerAgentReaction("linear", "failure");
     } finally {
       setLoading(false);
     }
@@ -397,11 +573,25 @@ export default function App() {
   function agentDisplayCount(agentId) {
     if (agentId === "pr") return prs.length;
     if (agentId === "linear") return issues.filter((i) => i.statusType !== "completed").length;
+    if (agentId === "notes") return notes.length;
     return agentCount(agentId);
   }
 
+  function todayCount() {
+    return dueWatches.length + issues.filter((i) => i.statusType === "started").length + prs.length;
+  }
+
+  function agentMood(agentId) {
+    if (agentId === "watcher" && agentDueCount(agentId) > 0) return "alert";
+    if (agentId === "linear" && (issueStatusCounts.started || 0) >= 3) return "busy";
+    if (agentId === "pr" && prs.some((pr) => pr.status === "changes" || pr.status === "failing")) return "stressed";
+    if (agentId === "notes" && noteSearch) return "curious";
+    return "calm";
+  }
+
   const totalActive = watches.filter((w) => w.status !== "resolved").length;
-  const showLanding = forceLanding || (!initialLoad && totalActive === 0 && !agentFilter);
+  const activeView = agentFilter || "today";
+  const showLanding = forceLanding;
 
   const composerEl = (
     <form onSubmit={createTask} className="composer">
@@ -478,22 +668,25 @@ export default function App() {
           <section className="agentGrid">
             <button
               type="button"
-              className={`agentChip ${agentFilter === null ? "active" : ""}`}
-              onClick={() => setAgentFilter(null)}
+              className={`agentChip todayChip ${activeView === "today" ? "active" : ""}`}
+              onClick={() => setAgentFilter("today")}
             >
-              <span className="chipLabel">All</span>
-              <span className="chipCount">{totalActive}</span>
+              <span className="chipLabel">Today</span>
+              {todayCount() > 0 && <span className="chipCount">{todayCount()}</span>}
             </button>
             {AGENTS.map((agent) => {
               const count = agentDisplayCount(agent.id);
               const hasDue = agentDueCount(agent.id) > 0;
+              const mood = agentMood(agent.id);
+              const reaction = agentReaction?.agent === agent.id ? `react-${agentReaction.type}` : "";
               return (
                 <button
                   key={agent.id}
                   type="button"
-                  className={`agentChip ${agentFilter === agent.id ? "active" : ""} ${hasDue ? "hasDue" : ""}`}
-                  onClick={() => setAgentFilter(agentFilter === agent.id ? null : agent.id)}
+                  className={`agentChip mood-${mood} ${reaction} ${activeView === agent.id ? "active" : ""} ${hasDue ? "hasDue" : ""}`}
+                  onClick={() => setAgentFilter(activeView === agent.id ? "today" : agent.id)}
                   style={{ "--agent-color": AGENT_COLORS[agent.id] }}
+                  title={`${agent.name} is ${mood}`}
                 >
                   <span className="chipSpriteWrap">
                     <PixelSprite type={agent.pixel} size={18} />
@@ -506,33 +699,59 @@ export default function App() {
             })}
           </section>
 
-          {agentFilter === "pr" ? (
-            <PRList prs={prs} loaded={prsLoaded} summary={prSummary} onRefresh={fetchPRs} />
-          ) : agentFilter === "linear" ? (
-            <IssueList issues={issues} loaded={issuesLoaded} />
-          ) : !initialLoad && (
+          {activeView === "today" ? (
+            <TodayView
+              dueWatches={dueWatches}
+              inProgressIssues={issues.filter((issue) => issue.statusType === "started")}
+              prs={prs}
+            />
+          ) : activeView === "pr" ? (
+            <PRList
+              prs={prs}
+              loaded={prsLoaded}
+              onRefresh={() => fetchPRs({ force: true })}
+              syncedAt={prsSyncedAt}
+              syncing={prsSyncing}
+            />
+          ) : activeView === "linear" ? (
+            <IssueList
+              issues={issues}
+              clarification={linearClarification}
+              loaded={issuesLoaded}
+              onAssignMe={handleAssignIssueToMe}
+              onClarify={handleLinearClarificationChoice}
+              onStatusChange={handleIssueStatus}
+              onSync={() => fetchIssues({ force: true })}
+              statusCounts={issueStatusCounts}
+              syncedAt={issuesSyncedAt}
+              syncing={issuesSyncing}
+            />
+          ) : activeView === "notes" ? (
+            <NotesList
+              themes={notes}
+              loaded={notesLoaded}
+              search={noteSearch}
+              onClearSearch={() => setNoteSearch(null)}
+              onDeleteTheme={handleDeleteNoteTheme}
+              onDeleteSubNote={handleDeleteSubNote}
+            />
+          ) : activeView === "watcher" && !initialLoad && (
             <div className="watchesLayout">
-              {dueWatches.length > 0 && (
-                <WatchSection
-                  title="Needs attention"
-                  watches={dueWatches}
-                  variant="due"
-                  onDelete={handleDelete}
-                  onResolve={handleResolve}
-                  onSnooze={handleSnooze}
-                />
-              )}
-
-              {activeWatches.length > 0 && (
-                <WatchSection
-                  title="Active"
-                  watches={activeWatches}
-                  onDelete={handleDelete}
-                  onResolve={handleResolve}
-                  onSnooze={handleSnooze}
-                />
-              )}
-
+              <WatchSection
+                title="Needs attention"
+                watches={dueWatches}
+                variant="due"
+                onDelete={handleDelete}
+                onResolve={handleResolve}
+                onSnooze={handleSnooze}
+              />
+              <WatchSection
+                title="Active"
+                watches={activeWatches}
+                onDelete={handleDelete}
+                onResolve={handleResolve}
+                onSnooze={handleSnooze}
+              />
               {resolvedWatches.length > 0 && (
                 <WatchSection
                   title="Resolved"
@@ -542,17 +761,6 @@ export default function App() {
                   onResolve={handleResolve}
                   onSnooze={handleSnooze}
                 />
-              )}
-
-              {filteredWatches.length === 0 && (
-                <div className="emptyState">
-                  <PixelSprite type={agentFilter || "boss"} size={48} />
-                  <p>
-                    {agentFilter
-                      ? `No tasks for ${AGENTS.find((a) => a.id === agentFilter)?.name || agentFilter}.`
-                      : "No tasks yet. Tell me what to track."}
-                  </p>
-                </div>
               )}
             </div>
           )}
@@ -574,6 +782,7 @@ export default function App() {
       {danceParty && <DancePartyOverlay onEnd={() => setDanceParty(false)} />}
       {bohemianGrove && <BohemianGroveOverlay onEnd={() => setBohemianGrove(false)} />}
       {murderScene && <MurderSceneOverlay onEnd={() => setMurderScene(false)} />}
+      {fightClub && <FightClubOverlay onEnd={() => setFightClub(false)} />}
     </main>
   );
 }
@@ -620,6 +829,80 @@ function DancePartyOverlay({ onEnd }) {
       </div>
       <p className="danceTimer">{seconds}s</p>
       <p className="danceHint">click anywhere to stop</p>
+    </div>
+  );
+}
+
+function FightClubOverlay({ onEnd }) {
+  const [seconds, setSeconds] = useState(30);
+  const lineup = useMemo(() => {
+    const shuffled = [...AGENTS]
+      .map((agent) => ({ agent, sort: Math.random() }))
+      .sort((a, b) => a.sort - b.sort)
+      .map(({ agent }) => agent);
+
+    return {
+      fighters: shuffled.slice(0, 2),
+      cheerers: shuffled.slice(2),
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSeconds((s) => {
+        if (s <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="fightOverlay" onClick={onEnd}>
+      <div className="fightScene">
+        <div className="cheerSide">
+          <FightCheerer agent={lineup.cheerers[0]} side="left" />
+        </div>
+
+        <div className="fightRing">
+          <div className="fightTitle">Fight Club</div>
+          <div className="fighter fighter-left">
+            <span className="fightBurst">pow</span>
+            <PixelSprite type={lineup.fighters[0].pixel} size={58} />
+            <span className="fighterName">{lineup.fighters[0].name}</span>
+          </div>
+          <div className="fightCloud">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="fighter fighter-right">
+            <span className="fightBurst">bam</span>
+            <PixelSprite type={lineup.fighters[1].pixel} size={58} />
+            <span className="fighterName">{lineup.fighters[1].name}</span>
+          </div>
+        </div>
+
+        <div className="cheerSide">
+          <FightCheerer agent={lineup.cheerers[1]} side="right" />
+        </div>
+      </div>
+
+      <p className="fightTimer">{seconds}s</p>
+      <p className="fightHint">click anywhere to break it up</p>
+    </div>
+  );
+}
+
+function FightCheerer({ agent, side }) {
+  return (
+    <div className={`fightCheerer cheer-${side}`}>
+      <span className="cheerText">{side === "left" ? "get him!" : "let's go!"}</span>
+      <PixelSprite type={agent.pixel} size={46} />
+      <span className="cheererName">{agent.name}</span>
     </div>
   );
 }
@@ -817,9 +1100,9 @@ function MurderSceneOverlay({ onEnd }) {
   }, []);
 
   const bystanders = [
-    { type: "linear", name: "PM-Bot" },
-    { type: "pr", name: "PR Shepherd" },
-    { type: "notes", name: "Notes Scout" },
+    { type: "linear", name: "Mr. PM" },
+    { type: "pr", name: "PR Boy" },
+    { type: "notes", name: "Notes Guy" },
   ];
 
   return (
@@ -858,6 +1141,176 @@ function MurderSceneOverlay({ onEnd }) {
   );
 }
 
+function NotesList({ loaded, onClearSearch, onDeleteSubNote, onDeleteTheme, search, themes }) {
+  if (!loaded) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="notes" size={48} />
+        <p>Loading notes...</p>
+      </div>
+    );
+  }
+
+  if (themes.length === 0) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="notes" size={48} />
+        <p>No note themes yet. Ask Notes Guy to start one.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="notesLayout">
+      {search && (
+        <section className="noteSearchResults">
+          <div className="noteSearchHead">
+            <div className="noteSearchTitle">
+              <PixelSprite type="notes" size={22} />
+              <div>
+                <h2>Notes about {search.query}</h2>
+                <span>{search.results.length} matching themes</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="actionBtn delete noteDeleteBtn"
+              aria-label="Close note search results"
+              onClick={onClearSearch}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+          {search.answer && <p className="noteAnswer">{search.answer}</p>}
+          {search.results.length > 0 ? (
+            <div className="subNoteList">
+              {search.results.map((result) => (
+                <article key={result.themeId} className="noteSearchTheme">
+                  <h3>{result.themeTitle}</h3>
+                  {result.notes.length > 0 ? (
+                    result.notes.map((note) => (
+                      <p key={note.id}>{note.body}</p>
+                    ))
+                  ) : (
+                    <p>No sub notes in this theme yet.</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="emptySubNotes">Nothing saved about that yet.</p>
+          )}
+        </section>
+      )}
+
+      {themes.map((theme) => (
+        <article key={theme.id} className="noteTheme">
+          <div className="noteThemeHead">
+            <div>
+              <h2>{theme.title}</h2>
+              <span>{theme.notes.length} sub notes</span>
+            </div>
+            <div className="noteThemeActions">
+              <PixelSprite type="notes" size={28} />
+              <button
+                type="button"
+                className="actionBtn delete noteDeleteBtn"
+                aria-label={`Delete ${theme.title}`}
+                onClick={() => onDeleteTheme(theme)}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {theme.notes.length > 0 ? (
+            <div className="subNoteList">
+              {theme.notes.map((note) => (
+                <div key={note.id} className="subNote">
+                  <div>
+                    <p>{note.body}</p>
+                    <span>{formatRelative(note.createdAt)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="actionBtn delete noteDeleteBtn"
+                    aria-label="Delete note"
+                    onClick={() => onDeleteSubNote(theme, note)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="emptySubNotes">Theme created. Add a sub note whenever you are ready.</p>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function TodayView({ dueWatches, inProgressIssues, prs }) {
+  return (
+    <div className="todayLayout">
+      <TodaySection title="Jared" count={dueWatches.length} empty="No reminders need attention." area="jared">
+        {dueWatches.map((watch) => (
+          <div key={watch.id} className="todayItem">
+            <PixelSprite type={watch.agent || "watcher"} size={18} />
+            <div>
+              <strong>{watch.instruction}</strong>
+              <span>{watch.subject} · {formatRelative(watch.dueAt)}</span>
+            </div>
+          </div>
+        ))}
+      </TodaySection>
+
+      <TodaySection title="Mr. PM" count={inProgressIssues.length} empty="No tasks in progress." area="pm">
+        {inProgressIssues.map((issue) => (
+          <a key={issue.id} className="todayItem" href={issue.url} target="_blank" rel="noopener noreferrer">
+            <PixelSprite type="linear" size={18} />
+            <div>
+              <strong>{issue.title}</strong>
+              <span>{issue.identifier} · {issue.status}</span>
+            </div>
+          </a>
+        ))}
+      </TodaySection>
+
+      <TodaySection title="PR Boy" count={prs.length} empty="No open PRs. Nice." area="prs">
+        {prs.map((pr) => (
+          <a key={pr.number} className="todayItem" href={pr.url} target="_blank" rel="noopener noreferrer">
+            <PixelSprite type="pr" size={18} />
+            <div>
+              <strong>{pr.title}</strong>
+              <span>#{pr.number} · {PR_STATUS_LABELS[pr.status]}</span>
+            </div>
+          </a>
+        ))}
+      </TodaySection>
+    </div>
+  );
+}
+
+function TodaySection({ area, children, count, empty, title }) {
+  return (
+    <section className={`todaySection today-${area}`}>
+      <div className="todaySectionHead">
+        <h2>{title}</h2>
+        <span className="badge">{count}</span>
+      </div>
+      {count > 0 ? children : <p className="todayEmpty">{empty}</p>}
+    </section>
+  );
+}
+
 const STATUS_TYPE_ORDER = ["urgent", "started", "unstarted", "backlog", "completed"];
 const STATUS_TYPE_LABELS = {
   urgent: "Urgent",
@@ -874,7 +1327,10 @@ const STATUS_TYPE_COLORS = {
   completed: "#34d399",
 };
 
-function IssueList({ issues, loaded }) {
+function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onStatusChange, onSync, statusCounts, syncedAt, syncing }) {
+  const [collapsedStatuses, setCollapsedStatuses] = useState({});
+  const syncDetail = `In Progress: ${statusCounts.started || 0}${syncedAt ? ` · synced ${formatRelative(syncedAt)}` : ""}`;
+
   if (!loaded) {
     return (
       <div className="emptyState">
@@ -889,6 +1345,10 @@ function IssueList({ issues, loaded }) {
       <div className="emptyState">
         <PixelSprite type="linear" size={48} />
         <p>No issues assigned to you.</p>
+        <span className="syncDetail">{syncDetail}</span>
+        <button type="button" className="syncBtn" onClick={onSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Mr. PM"}
+        </button>
       </div>
     );
   }
@@ -900,26 +1360,93 @@ function IssueList({ issues, loaded }) {
     grouped[type].push(issue);
   }
 
+  const statusTypes = [
+    ...STATUS_TYPE_ORDER.filter((type) => grouped[type]?.length > 0),
+    ...Object.keys(grouped).filter((type) => !STATUS_TYPE_ORDER.includes(type)),
+  ];
+
+  function toggleStatus(type) {
+    setCollapsedStatuses((prev) => ({ ...prev, [type]: !prev[type] }));
+  }
+
   return (
     <div className="watchesLayout">
-      {STATUS_TYPE_ORDER.filter((t) => grouped[t]?.length > 0).map((type) => (
+      {clarification && (
+        <LinearClarificationCard clarification={clarification} onChoose={onClarify} />
+      )}
+      <div className="syncBar">
+        <span>{issues.length} assigned issues · {syncDetail}</span>
+        <button type="button" className="syncBtn" onClick={onSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Mr. PM"}
+        </button>
+      </div>
+      {statusTypes.map((type) => (
         <section key={type} className={`watchSection ${type === "urgent" ? "due" : ""}`}>
-          <div className="sectionHead">
+          <button
+            type="button"
+            className="sectionHead sectionToggle"
+            aria-expanded={!collapsedStatuses[type]}
+            onClick={() => toggleStatus(type)}
+          >
+            <span className={`chevron ${collapsedStatuses[type] ? "collapsed" : ""}`}>⌄</span>
             <h2>{STATUS_TYPE_LABELS[type] || type}</h2>
             <span className="badge">{grouped[type].length}</span>
-          </div>
-          <div className="watchList">
-            {grouped[type].map((issue) => (
-              <IssueCard key={issue.id} issue={issue} />
-            ))}
-          </div>
+          </button>
+          {!collapsedStatuses[type] && (
+            <div className="watchList">
+              {grouped[type].map((issue) => (
+                <IssueCard
+                  key={issue.id}
+                  issue={issue}
+                  onAssignMe={onAssignMe}
+                  onStatusChange={onStatusChange}
+                />
+              ))}
+            </div>
+          )}
         </section>
       ))}
     </div>
   );
 }
 
-function IssueCard({ issue }) {
+function LinearClarificationCard({ clarification, onChoose }) {
+  return (
+    <section className="clarificationCard">
+      <div>
+        <h2>Which task did you mean?</h2>
+        <p>{formatClarificationIntent(clarification)}</p>
+      </div>
+      <div className="clarificationChoices">
+        {clarification.candidates.map((candidate) => (
+          <button key={candidate.identifier} type="button" onClick={() => onChoose(candidate)}>
+            <span>{candidate.identifier}</span>
+            <strong>{candidate.title}</strong>
+            <em>{candidate.status}</em>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatClarificationIntent(clarification) {
+  if (clarification.requestedAction === "update_status") {
+    return `Move "${clarification.issueTitle}" to ${clarification.statusName}.`;
+  }
+  if (clarification.requestedAction === "change_assignee") {
+    return `Change the assignee for "${clarification.issueTitle}".`;
+  }
+  return `I found multiple matches for "${clarification.issueTitle}".`;
+}
+
+function IssueCard({ issue, onAssignMe, onStatusChange }) {
+  function handleCardAction(event, action) {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  }
+
   return (
     <a className="watchCard issueCard" href={issue.url} target="_blank" rel="noopener noreferrer">
       <PixelSprite type="linear" size={22} />
@@ -933,12 +1460,26 @@ function IssueCard({ issue }) {
         </div>
         <p className="watchInstruction">{issue.title}</p>
         <span className="watchDue">{formatRelative(issue.updatedAt)}</span>
+        <div className="issueQuickActions">
+          <button type="button" onClick={(event) => handleCardAction(event, () => onStatusChange(issue, "Todo"))}>
+            Todo
+          </button>
+          <button type="button" onClick={(event) => handleCardAction(event, () => onStatusChange(issue, "In Progress"))}>
+            In Progress
+          </button>
+          <button type="button" onClick={(event) => handleCardAction(event, () => onStatusChange(issue, "Done"))}>
+            Done
+          </button>
+          <button type="button" onClick={(event) => handleCardAction(event, () => onAssignMe(issue))}>
+            Assign me
+          </button>
+        </div>
       </div>
     </a>
   );
 }
 
-function PRList({ prs, loaded, summary, onRefresh }) {
+function PRList({ loaded, onRefresh, prs, syncedAt, syncing }) {
   if (!loaded) {
     return (
       <div className="emptyState">
@@ -953,6 +1494,9 @@ function PRList({ prs, loaded, summary, onRefresh }) {
       <div className="emptyState">
         <PixelSprite type="pr" size={48} />
         <p>No open PRs. Nice.</p>
+        <button type="button" className="syncBtn prSyncBtn" onClick={onRefresh} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync PR Boy"}
+        </button>
       </div>
     );
   }
@@ -963,12 +1507,12 @@ function PRList({ prs, loaded, summary, onRefresh }) {
 
   return (
     <div className="watchesLayout">
-      {summary && (
-        <div className="llmSummary">
-          <PixelSprite type="pr" size={18} />
-          <p>{summary}</p>
-        </div>
-      )}
+      <div className="syncBar">
+        <span>{prs.length} open PRs{syncedAt ? ` · synced ${formatRelative(syncedAt)}` : ""}</span>
+        <button type="button" className="syncBtn prSyncBtn" onClick={onRefresh} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync PR Boy"}
+        </button>
+      </div>
       {needsAttention.length > 0 && (
         <section className="watchSection due">
           <div className="sectionHead">
@@ -1178,8 +1722,42 @@ function formatRelative(value) {
   return `in ${Math.round(hrs / 24)}d`;
 }
 
-async function apiGet(path) {
-  const response = await fetch(path);
+function formatNoteMessage(agentName, noteResult) {
+  if (noteResult?.action === "search_notes") {
+    return `${agentName} found ${noteResult.results.length} note matches for ${noteResult.query}`;
+  }
+
+  const themeTitle = noteResult?.theme?.title || "notes";
+  if (noteResult?.action === "add_note") {
+    return `${agentName} added a sub note to ${themeTitle}`;
+  }
+
+  return `${agentName} created ${themeTitle}`;
+}
+
+function formatLinearActionMessage(agentName, linearAction) {
+  if (linearAction.action === "clarify_issue") {
+    const candidates = (linearAction.candidates || [])
+      .map((issue) => `${issue.identifier} (${issue.title})`)
+      .join(", ");
+    return `${agentName} found multiple matches for "${linearAction.issueTitle}": ${candidates}`;
+  }
+
+  if (linearAction.action === "update_status") {
+    return `${agentName} moved ${linearAction.identifier} to ${linearAction.status}`;
+  }
+
+  if (linearAction.action === "change_assignee") {
+    return linearAction.assignee
+      ? `${agentName} assigned ${linearAction.identifier} to ${linearAction.assignee}`
+      : `${agentName} unassigned ${linearAction.identifier}`;
+  }
+
+  return `${agentName} updated ${linearAction.identifier}`;
+}
+
+async function apiGet(path, options) {
+  const response = await fetch(path, options);
   return parseResponse(response);
 }
 

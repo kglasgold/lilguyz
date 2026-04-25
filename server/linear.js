@@ -1,6 +1,7 @@
 import { LinearClient } from "@linear/sdk";
 
 const DEFAULT_TEAM = "Finance Analytics";
+const LINEAR_API_URL = "https://api.linear.app/graphql";
 
 let client = null;
 let teamCache = null;
@@ -41,7 +42,7 @@ async function resolveTeam(teamName = DEFAULT_TEAM) {
   return match;
 }
 
-async function resolveUserId(assigneeName) {
+export async function resolveUserId(assigneeName) {
   if (!assigneeName) return undefined;
 
   const c = getClient();
@@ -63,7 +64,7 @@ async function resolveUserId(assigneeName) {
   const match = usersCache.find(
     (u) =>
       u.name.toLowerCase() === lower ||
-      u.displayName.toLowerCase() === lower ||
+      u.displayName?.toLowerCase() === lower ||
       u.name.toLowerCase().includes(lower) ||
       lower.includes(u.name.toLowerCase().split(" ")[0]),
   );
@@ -80,9 +81,9 @@ let myIssuesCache = null;
 let myIssuesLastFetch = 0;
 const ISSUES_CACHE_TTL = 30_000;
 
-export async function fetchMyIssues() {
+export async function fetchMyIssues(options = {}) {
   const now = Date.now();
-  if (myIssuesCache && now - myIssuesLastFetch < ISSUES_CACHE_TTL) {
+  if (!options.force && myIssuesCache && now - myIssuesLastFetch < ISSUES_CACHE_TTL) {
     return myIssuesCache;
   }
 
@@ -152,4 +153,156 @@ export async function createIssue(title, description, assigneeName) {
     url: issue.url,
     title: issue.title,
   };
+}
+
+export async function updateIssueStatus(identifier, statusName) {
+  const issue = await findIssueByIdentifier(identifier);
+  const state = resolveWorkflowState(issue.team.states.nodes, statusName);
+  const updated = await updateIssue(issue.id, { stateId: state.id });
+  clearIssueCache();
+
+  return {
+    action: "update_status",
+    identifier: updated.identifier,
+    title: updated.title,
+    url: updated.url,
+    status: updated.state?.name || state.name,
+    statusType: updated.state?.type || state.type,
+  };
+}
+
+export async function updateIssueAssignee(identifier, assigneeName) {
+  const issue = await findIssueByIdentifier(identifier);
+  const assigneeId = assigneeName === null ? null : await resolveUserId(assigneeName);
+
+  if (assigneeName !== null && !assigneeId) {
+    throw new Error(`Could not find Linear user "${assigneeName}"`);
+  }
+
+  const updated = await updateIssue(issue.id, { assigneeId });
+  clearIssueCache();
+
+  return {
+    action: "change_assignee",
+    identifier: updated.identifier,
+    title: updated.title,
+    url: updated.url,
+    assignee: updated.assignee?.displayName || updated.assignee?.name || null,
+  };
+}
+
+async function findIssueByIdentifier(identifier) {
+  const issueKey = String(identifier || "").trim().toUpperCase();
+  const data = await requestLinear(
+    `query IssueById($id: String!) {
+      issue(id: $id) {
+        id
+        identifier
+        title
+        url
+        team {
+          id
+          name
+          states {
+            nodes {
+              id
+              name
+              type
+            }
+          }
+        }
+      }
+    }`,
+    { id: issueKey },
+  );
+  const issue = data.issue;
+  if (!issue) {
+    throw new Error(`Could not find Linear issue ${issueKey}`);
+  }
+  return issue;
+}
+
+function resolveWorkflowState(states, statusName) {
+  const desired = normalize(statusName);
+  const desiredType = statusTypeAlias(desired);
+  const state =
+    states.find((s) => normalize(s.name) === desired) ||
+    states.find((s) => desiredType && s.type === desiredType) ||
+    states.find((s) => normalize(s.name).includes(desired));
+
+  if (!state) {
+    throw new Error(`Could not find status "${statusName}". Available: ${states.map((s) => s.name).join(", ")}`);
+  }
+
+  return state;
+}
+
+async function updateIssue(issueId, input) {
+  const data = await requestLinear(
+    `mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+      issueUpdate(id: $id, input: $input) {
+        success
+        issue {
+          id
+          identifier
+          title
+          url
+          state { name type }
+          assignee { name displayName }
+        }
+      }
+    }`,
+    { id: issueId, input },
+  );
+
+  if (!data.issueUpdate?.success || !data.issueUpdate.issue) {
+    throw new Error("Linear issue update failed");
+  }
+
+  return data.issueUpdate.issue;
+}
+
+async function requestLinear(query, variables = {}) {
+  const key = process.env.LINEAR_API_KEY;
+  if (!key) {
+    throw new Error("LINEAR_API_KEY is not configured");
+  }
+
+  const response = await fetch(LINEAR_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: key,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  const payload = await response.json();
+
+  if (!response.ok || payload.errors) {
+    const message = payload.errors?.[0]?.message || payload.error || "Linear request failed";
+    throw new Error(message);
+  }
+
+  return payload.data;
+}
+
+function clearIssueCache() {
+  myIssuesCache = null;
+  myIssuesLastFetch = 0;
+}
+
+function normalize(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function statusTypeAlias(value) {
+  if (["done", "complete", "completed"].includes(value)) return "completed";
+  if (["in progress", "started", "doing"].includes(value)) return "started";
+  if (["todo", "to do", "unstarted", "not started"].includes(value)) return "unstarted";
+  if (["backlog"].includes(value)) return "backlog";
+  if (["canceled", "cancelled"].includes(value)) return "canceled";
+  return null;
 }

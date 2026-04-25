@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain, Notification, powerMonitor } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -59,6 +59,7 @@ async function main() {
     trafficLightPosition: { x: 14, y: 14 },
     icon: path.join(rootDir, "assets", "icon.png"),
     webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -68,6 +69,22 @@ async function main() {
 }
 
 app.whenReady().then(main);
+
+app.whenReady().then(() => {
+  ipcMain.on("jared-notification", (_event, payload) => {
+    if (!Notification.isSupported()) return;
+
+    const title = typeof payload?.title === "string" ? payload.title : "Jared reminder";
+    const body = typeof payload?.body === "string" ? payload.body : "";
+    new Notification({ title, body }).show();
+  });
+
+  powerMonitor.on("resume", () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("system-resume");
+    }
+  });
+});
 
 app.on("window-all-closed", () => {
   app.quit();

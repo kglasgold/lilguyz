@@ -4,9 +4,9 @@ A local desktop tool with tiny 8-bit agents that help you track work. Talk to th
 
 **Agents:**
 - **Jared** — generic reminders and timers
-- **PM-Bot** — creates Linear tickets, shows your assigned issues by status
-- **PR Shepherd** — lists your open GitHub PRs with review + CI status
-- **Notes Scout** — (coming soon)
+- **Mr. PM** — creates Linear tickets, shows your assigned issues by status
+- **PR Boy** — lists your open GitHub PRs with review + CI status
+- **Notes Guy** — stores note themes and sub notes
 
 ## Setup
 
@@ -24,7 +24,7 @@ Copy the example env file and add your Linear API key (get one at https://linear
 cp .env.example .env
 ```
 
-PR Shepherd needs the GitHub CLI authenticated:
+PR Boy needs the GitHub CLI authenticated:
 
 ```bash
 brew install gh

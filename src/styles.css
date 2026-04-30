@@ -59,9 +59,9 @@ textarea {
 }
 
 .shell {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 0 1.5rem 4rem;
+  padding: 0 1rem 4rem;
   padding-top: env(titlebar-area-height, 0px);
 }
 
@@ -136,6 +136,10 @@ textarea {
   animation: peek 2.6s ease-in-out infinite;
 }
 
+.pixelSprite[data-agent="granola"] {
+  animation: scurry 2.2s ease-in-out infinite;
+}
+
 @keyframes bobble {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-1.5px); }
@@ -163,6 +167,13 @@ textarea {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   30% { transform: translateY(-1px) rotate(2deg); }
   70% { transform: translateY(-1px) rotate(-2deg); }
+}
+
+@keyframes scurry {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(-1px) translateY(1px); }
+  50% { transform: translateX(1.5px) translateY(-1px); }
+  75% { transform: translateX(-0.5px) translateY(0.5px); }
 }
 
 /* ── Landing ── */
@@ -337,19 +348,21 @@ textarea {
 
 .agentGrid {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow: visible;
 }
 
 .agentChip {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 5px 9px;
   background: transparent;
   cursor: pointer;
+  flex-shrink: 0;
   transition: all 150ms ease;
   white-space: nowrap;
 }
@@ -365,7 +378,7 @@ textarea {
 }
 
 .chipLabel {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 450;
   color: var(--text-secondary);
 }
@@ -401,13 +414,13 @@ textarea {
 }
 
 .chipCount {
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.06);
   border-radius: 999px;
-  padding: 1px 6px;
-  min-width: 18px;
+  padding: 1px 5px;
+  min-width: 16px;
   text-align: center;
 }
 
@@ -985,6 +998,65 @@ a.linearLink:hover {
   color: #f59e0b;
 }
 
+/* ── Granola ── */
+
+.granolaLayout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.granolaSearchResults {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(132, 204, 22, 0.28);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(132, 204, 22, 0.08);
+}
+
+.granolaAnswer {
+  border: 1px solid rgba(132, 204, 22, 0.22);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: rgba(10, 10, 11, 0.35);
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.granolaNoteList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.granolaCard {
+  border-color: rgba(132, 204, 22, 0.18);
+  background: linear-gradient(180deg, rgba(132, 204, 22, 0.08), var(--bg-raised) 44%);
+}
+
+.granolaId {
+  color: #84cc16;
+}
+
+.granolaOwner {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.granolaSummary {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.granolaSyncBtn:hover:not(:disabled) {
+  border-color: rgba(132, 204, 22, 0.35);
+}
+
 /* ── Actions ── */
 
 .watchActions {
@@ -1052,6 +1124,12 @@ a.linearLink:hover {
   font-size: 12.5px;
 }
 
+.syncActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .syncDetail {
   color: var(--text-muted);
   font-size: 12.5px;
@@ -1076,6 +1154,111 @@ a.linearLink:hover {
 
 .syncBtn:disabled {
   opacity: 0.55;
+  cursor: default;
+}
+
+.issueCreateCard {
+  width: 100%;
+}
+
+.emptyState .issueCreateCard {
+  width: min(100%, 420px);
+}
+
+.issueCreateButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px dashed rgba(59, 130, 246, 0.35);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(59, 130, 246, 0.06);
+  color: #60a5fa;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.issueCreateButton:hover {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.issueForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.issueFormHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.issueFormHead h2 {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.issueFormHead span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.issueForm input,
+.issueForm textarea,
+.issueForm select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: rgba(10, 10, 11, 0.45);
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+}
+
+.issueForm input:focus,
+.issueForm textarea:focus,
+.issueForm select:focus {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.issueForm input::placeholder,
+.issueForm textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.issueFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.issueSubmitBtn {
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.issueSubmitBtn:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.issueSubmitBtn:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
@@ -1355,6 +1538,7 @@ a.prCard:hover {
 .dancer:nth-child(3) { animation-name: danceSpin; }
 .dancer:nth-child(4) { animation-name: danceSlide; }
 .dancer:nth-child(5) { animation-name: danceJump; }
+.dancer:nth-child(6) { animation-name: danceBounce; }
 
 .dancer .pixelSprite {
   animation: none !important;
@@ -1844,6 +2028,10 @@ a.prCard:hover {
 
 .bystander:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+.bystander:nth-child(4) {
+  animation-delay: 0.45s;
 }
 
 .bystanderReaction {

@@ -2,7 +2,7 @@ import { callLLMJson, isLLMConfigured } from "./llm.js";
 
 const ROUTER_PROMPT = `You are a router for a task management app called lilguyz. Given a user instruction, return JSON with these fields:
 
-- "agent": one of "watcher", "linear", "pr", "notes"
+- "agent": one of "watcher", "linear", "pr", "notes", "granola"
 - "title": a clean, concise task title extracted from the instruction (NOT the raw instruction itself)
 - "assignee": the person's name to assign to, or "me" if they said assign to me, or null
 - "description": any description content they specified, or null
@@ -11,13 +11,14 @@ const ROUTER_PROMPT = `You are a router for a task management app called lilguyz
 Routing rules:
 - "linear": tasks, tickets, issues, sprints, anything mentioning Linear or issue keys like FIN-3, or creating/tracking work items
 - "pr": pull requests, reviews, CI, merging, code review, anything GitHub PR related
+- "granola": Granola meeting notes, transcripts, AI meeting summaries, recaps from Granola, or searching what was said in a meeting
 - "notes": notes, docs, documents, meetings, standups, agendas, recaps, or memory/search questions like "what did I say about billing?"
 - "watcher": only explicit reminders, timers, alarms, or watch prompts like "remind me to...", "set a timer...", or "watch this..."
 - If a prompt is a general question, memory lookup, or ambiguous instruction, do not route it to watcher.
 
 Return ONLY valid JSON, no explanation.`;
 
-const VALID_AGENTS = new Set(["watcher", "linear", "pr", "notes"]);
+const VALID_AGENTS = new Set(["watcher", "linear", "pr", "notes", "granola"]);
 
 export async function classifyWithLLM(text) {
   if (!isLLMConfigured()) return null;
@@ -44,6 +45,8 @@ const ISSUE_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/;
 const PR_PATTERN = /\b(?:PR|pull\s*request|merge)\s*#?\d*/i;
 const PR_KEYWORDS = /\b(?:review|CI|merge|merged|approve|approval|blocker|conflict|rebase|cherry.?pick)\b/i;
 const LINEAR_KEYWORDS = /\b(?:task|ticket|issue|sprint|backlog|status|update|assign|priority|milestone|roadmap|epic)\b/i;
+const GRANOLA_KEYWORDS = /\b(?:granola|transcript|transcripts|meeting\s+notes?|ai\s+summary|meeting\s+summary|call\s+recap)\b/i;
+const GRANOLA_MEMORY_PATTERN = /\b(?:what|where|find|search|show|tell)\b.*\b(?:meeting|call|transcript|granola|recap)\b/i;
 const NOTES_KEYWORDS = /\b(?:note|notes|doc|docs|document|wiki|write.?up|meeting|standup|retro|recap|summary|agenda)\b/i;
 const NOTES_MEMORY_PATTERN = /\b(?:what|where|find|search|show|tell)\b.*\b(?:say|said|mention|remember|wrote|know|love|loved|like|liked)\b/i;
 const REMINDER_PATTERN = /\b(?:remind\s+me\s+to|remind\s+me\s+about|set\s+(?:a\s+)?timer|start\s+(?:a\s+)?timer|set\s+(?:an\s+)?alarm|watch\s+(?:this|for)|ping\s+me\s+(?:to|about|in|at))\b/i;
@@ -53,6 +56,7 @@ export function classifyRegex(text) {
 
   if (PR_PATTERN.test(trimmed) || PR_KEYWORDS.test(trimmed)) return "pr";
   if (ISSUE_PATTERN.test(trimmed) || LINEAR_KEYWORDS.test(trimmed)) return "linear";
+  if (GRANOLA_KEYWORDS.test(trimmed) || GRANOLA_MEMORY_PATTERN.test(trimmed)) return "granola";
   if (NOTES_KEYWORDS.test(trimmed) || NOTES_MEMORY_PATTERN.test(trimmed)) return "notes";
   if (isReminderInstruction(trimmed)) return "watcher";
   return null;

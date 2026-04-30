@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { classifyWithLLM, classifyRegex, extractAssignee, extractDescription, extractTitle, isReminderInstruction } from "./classify.js";
 import { callLLM, isLLMConfigured } from "./llm.js";
 import { fetchOpenPRs } from "./github.js";
+import { fetchGranolaNotes, handleGranolaInstruction, isConfigured as granolaConfigured } from "./granola.js";
 import { createIssue, fetchMyIssues, isConfigured as linearConfigured, updateIssueAssignee, updateIssueStatus } from "./linear.js";
 import { handleLinearAction } from "./linearActions.js";
 import { handleNoteInstruction } from "./notesGuy.js";
@@ -73,6 +74,45 @@ app.get("/api/issues", async (request, response, next) => {
   }
 });
 
+app.post("/api/issues", async (request, response, next) => {
+  try {
+    if (!linearConfigured()) {
+      response.status(400).json({ error: "LINEAR_API_KEY is not configured" });
+      return;
+    }
+
+    const title = request.body?.title;
+    const description = request.body?.description;
+    const status = request.body?.status;
+
+    if (typeof title !== "string" || !title.trim()) {
+      response.status(400).json({ error: "title is required" });
+      return;
+    }
+
+    if (description !== undefined && typeof description !== "string") {
+      response.status(400).json({ error: "description must be a string" });
+      return;
+    }
+
+    if (status !== undefined && typeof status !== "string") {
+      response.status(400).json({ error: "status must be a string" });
+      return;
+    }
+
+    const issue = await createIssue(title.trim(), description?.trim() || null, "me", status?.trim() || "Todo");
+    if (!issue) {
+      response.status(500).json({ error: "Linear issue creation failed" });
+      return;
+    }
+
+    const issues = await fetchMyIssues({ force: true });
+    response.status(201).json({ issue, issues, statusCounts: countIssueStatuses(issues), syncedAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/issues/:identifier/status", async (request, response, next) => {
   try {
     if (!linearConfigured()) {
@@ -120,6 +160,22 @@ app.get("/api/prs", async (request, response, next) => {
     response.set("Cache-Control", "no-store");
     const prs = await fetchOpenPRs({ force: request.query.refresh === "1" });
     response.json({ prs, syncedAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/granola/notes", async (request, response, next) => {
+  try {
+    response.set("Cache-Control", "no-store");
+
+    if (!granolaConfigured()) {
+      response.json({ notes: [], configured: false, syncedAt: new Date().toISOString() });
+      return;
+    }
+
+    const notes = await fetchGranolaNotes({ force: request.query.refresh === "1", pageSize: 20 });
+    response.json({ notes, configured: true, syncedAt: new Date().toISOString() });
   } catch (error) {
     next(error);
   }
@@ -242,6 +298,40 @@ app.post("/api/tasks", async (request, response, next) => {
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
 
+    if (agent === "granola") {
+      const watches = await listWatches();
+      const counts = await countByAgent();
+      const usedLLM = Boolean(llmResult);
+
+      if (!granolaConfigured()) {
+        response.status(201).json({
+          agent,
+          granolaConfigured: false,
+          granolaNotes: [],
+          granolaResult: null,
+          usedLLM,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      const granolaResult = await handleGranolaInstruction(instruction);
+      const granolaNotes = granolaResult.notes || await fetchGranolaNotes();
+      response.status(201).json({
+        agent,
+        granolaConfigured: true,
+        granolaNotes,
+        granolaResult,
+        usedLLM,
+        watches,
+        counts,
+        watch: null,
+      });
+      return;
+    }
+
     if (agent === "notes") {
       const noteResult = await handleNoteInstruction(instruction);
       const notes = await listNoteThemes();
@@ -323,6 +413,37 @@ app.post("/api/watches", async (request, response, next) => {
     const title = llmResult?.title || extractTitle(instruction);
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
+
+    if (agent === "granola") {
+      const watches = await listWatches();
+      const counts = await countByAgent();
+
+      if (!granolaConfigured()) {
+        response.status(201).json({
+          agent,
+          granolaConfigured: false,
+          granolaNotes: [],
+          granolaResult: null,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      const granolaResult = await handleGranolaInstruction(instruction);
+      const granolaNotes = granolaResult.notes || await fetchGranolaNotes();
+      response.status(201).json({
+        agent,
+        granolaConfigured: true,
+        granolaNotes,
+        granolaResult,
+        watches,
+        counts,
+        watch: null,
+      });
+      return;
+    }
 
     if (agent === "notes") {
       const noteResult = await handleNoteInstruction(instruction);

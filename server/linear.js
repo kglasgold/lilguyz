@@ -92,18 +92,36 @@ export async function fetchMyIssues(options = {}) {
 
   try {
     const me = await c.viewer;
-    const assigned = await me.assignedIssues({
-      first: 50,
-      orderBy: "updatedAt",
-      filter: {
-        state: { type: { nin: ["canceled"] } },
-      },
-    });
+    const assigned = await requestLinear(
+      `query MyAssignedIssues($assigneeId: ID!) {
+        issues(
+          first: 50
+          orderBy: updatedAt
+          filter: {
+            assignee: { id: { eq: $assigneeId } }
+            state: { type: { nin: ["canceled"] } }
+          }
+        ) {
+          nodes {
+            id
+            identifier
+            title
+            url
+            priority
+            createdAt
+            updatedAt
+            state { name type }
+            team { name }
+          }
+        }
+      }`,
+      { assigneeId: me.id },
+    );
 
     const issues = await Promise.all(
-      assigned.nodes.map(async (issue) => {
-        const state = await issue.state;
-        const team = await issue.team;
+      assigned.issues.nodes.map(async (issue) => {
+        const state = issue.state;
+        const team = issue.team;
         return {
           id: issue.id,
           identifier: issue.identifier,
@@ -128,7 +146,7 @@ export async function fetchMyIssues(options = {}) {
   }
 }
 
-export async function createIssue(title, description, assigneeName) {
+export async function createIssue(title, description, assigneeName, statusName) {
   const c = getClient();
   if (!c) return null;
 
@@ -136,16 +154,20 @@ export async function createIssue(title, description, assigneeName) {
   if (!team) return null;
 
   const assigneeId = await resolveUserId(assigneeName);
+  const states = await team.states();
+  const state = statusName ? resolveWorkflowState(states.nodes, statusName) : null;
 
   const result = await c.createIssue({
     teamId: team.id,
     title,
     description: description || undefined,
     assigneeId,
+    stateId: state?.id,
   });
 
   const issue = await result.issue;
   if (!issue) return null;
+  clearIssueCache();
 
   return {
     id: issue.id,

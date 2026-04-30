@@ -31,6 +31,12 @@ const AGENTS = [
     description: "Stores themes with sub notes.",
     pixel: "notes",
   },
+  {
+    id: "granola",
+    name: "Granola Goblin",
+    description: "Finds meeting notes and transcripts.",
+    pixel: "granola",
+  },
 ];
 
 function PixelSprite({ type, size = 24 }) {
@@ -131,6 +137,26 @@ function PixelSprite({ type, size = 24 }) {
         <rect x="4" y="7" width="1" height="1" fill="#fbbf24" />
       </svg>
     ),
+    granola: (
+      <svg width={s} height={s} viewBox="0 0 8 8" shapeRendering="crispEdges">
+        <rect x="2" y="0" width="4" height="1" fill="#84cc16" />
+        <rect x="1" y="1" width="6" height="1" fill="#65a30d" />
+        <rect x="1" y="2" width="6" height="1" fill="#bef264" />
+        <rect x="1" y="3" width="1" height="1" fill="#bef264" />
+        <rect x="2" y="3" width="1" height="1" fill="#1a2e05" />
+        <rect x="3" y="3" width="2" height="1" fill="#bef264" />
+        <rect x="5" y="3" width="1" height="1" fill="#1a2e05" />
+        <rect x="6" y="3" width="1" height="1" fill="#bef264" />
+        <rect x="1" y="4" width="6" height="1" fill="#a3e635" />
+        <rect x="2" y="5" width="1" height="1" fill="#65a30d" />
+        <rect x="3" y="5" width="2" height="1" fill="#bef264" />
+        <rect x="5" y="5" width="1" height="1" fill="#65a30d" />
+        <rect x="0" y="6" width="2" height="1" fill="#84cc16" />
+        <rect x="6" y="6" width="2" height="1" fill="#84cc16" />
+        <rect x="2" y="6" width="4" height="1" fill="#65a30d" />
+        <rect x="3" y="7" width="2" height="1" fill="#84cc16" />
+      </svg>
+    ),
   };
 
   return (
@@ -145,6 +171,7 @@ const AGENT_COLORS = {
   linear: "#3b82f6",
   pr: "#34d399",
   notes: "#f59e0b",
+  granola: "#84cc16",
 };
 
 const PR_STATUS_LABELS = {
@@ -183,6 +210,12 @@ export default function App() {
   const [notes, setNotes] = useState([]);
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [noteSearch, setNoteSearch] = useState(null);
+  const [granolaNotes, setGranolaNotes] = useState([]);
+  const [granolaLoaded, setGranolaLoaded] = useState(false);
+  const [granolaSyncing, setGranolaSyncing] = useState(false);
+  const [granolaSyncedAt, setGranolaSyncedAt] = useState(null);
+  const [granolaSearch, setGranolaSearch] = useState(null);
+  const [granolaConfigured, setGranolaConfigured] = useState(true);
   const [greeting, setGreeting] = useState("");
   const [message, setMessage] = useState("");
   const [lastAgent, setLastAgent] = useState(null);
@@ -261,6 +294,7 @@ export default function App() {
       void fetchPRs();
       void fetchIssues({ force: true });
       void fetchNotes();
+      void fetchGranolaNotes({ force: true });
       void fetchGreeting();
     }
 
@@ -274,6 +308,9 @@ export default function App() {
     const issueInterval = setInterval(() => {
       void fetchIssues();
     }, 60_000);
+    const granolaInterval = setInterval(() => {
+      void fetchGranolaNotes();
+    }, 120_000);
     const removeResumeListener = window.lilguyz?.onSystemResume?.(refreshAfterWake);
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") refreshAfterWake();
@@ -284,6 +321,7 @@ export default function App() {
       clearInterval(interval);
       clearInterval(prInterval);
       clearInterval(issueInterval);
+      clearInterval(granolaInterval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       removeResumeListener?.();
     };
@@ -336,6 +374,23 @@ export default function App() {
       setNotesLoaded(true);
     } catch (err) {
       console.error("Failed to fetch notes:", err.message);
+    }
+  }
+
+  async function fetchGranolaNotes(options = {}) {
+    if (options.force) setGranolaSyncing(true);
+    try {
+      const path = options.force ? `/api/granola/notes?refresh=1&t=${Date.now()}` : "/api/granola/notes";
+      const payload = await apiGet(path, options.force ? { cache: "no-store" } : undefined);
+      setGranolaNotes(payload.notes || []);
+      setGranolaConfigured(payload.configured !== false);
+      setGranolaLoaded(true);
+      setGranolaSyncedAt(payload.syncedAt || new Date().toISOString());
+    } catch (err) {
+      console.error("Failed to fetch Granola notes:", err.message);
+      if (options.force) setMessage(err.message);
+    } finally {
+      if (options.force) setGranolaSyncing(false);
     }
   }
 
@@ -409,6 +464,19 @@ export default function App() {
         setNotes(payload.notes);
         setNotesLoaded(true);
       }
+      if (payload.granolaNotes) {
+        setGranolaNotes(payload.granolaNotes);
+        setGranolaLoaded(true);
+        setGranolaSyncedAt(new Date().toISOString());
+      }
+      if (payload.granolaConfigured !== undefined) {
+        setGranolaConfigured(payload.granolaConfigured);
+      }
+      if (payload.granolaResult?.action === "search_granola_notes") {
+        setGranolaSearch(payload.granolaResult);
+      } else if (payload.agent === "granola") {
+        setGranolaSearch(null);
+      }
       if (payload.noteResult?.action === "search_notes") {
         setNoteSearch(payload.noteResult);
       } else if (payload.agent === "notes") {
@@ -444,6 +512,9 @@ export default function App() {
       } else if (payload.agent === "notes") {
         setAgentFilter("notes");
         setMessage(formatNoteMessage(agentName, payload.noteResult));
+      } else if (payload.agent === "granola") {
+        setAgentFilter("granola");
+        setMessage(formatGranolaMessage(agentName, payload));
       } else {
         setMessage(`${agentName} picked this up`);
       }
@@ -546,6 +617,26 @@ export default function App() {
     await mutateIssue(`/api/issues/${issue.identifier}/assignee`, { assignee: "me" });
   }
 
+  async function handleCreateIssue({ title, description, status }) {
+    setLoading(true);
+    try {
+      const payload = await apiPost("/api/issues", { title, description, status });
+      setIssues(payload.issues || []);
+      setIssuesLoaded(true);
+      setIssuesSyncedAt(payload.syncedAt || new Date().toISOString());
+      setIssueStatusCounts(payload.statusCounts || {});
+      setMessage(`Mr. PM created ${payload.issue.identifier}`);
+      setLastAgent("linear");
+      triggerAgentReaction("linear", "success");
+    } catch (error) {
+      setMessage(error.message);
+      triggerAgentReaction("linear", "failure");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLinearClarificationChoice(candidate) {
     if (!linearClarification) return;
 
@@ -609,6 +700,7 @@ export default function App() {
     if (agentId === "pr") return prs.length;
     if (agentId === "linear") return issues.filter((i) => i.statusType !== "completed").length;
     if (agentId === "notes") return notes.length;
+    if (agentId === "granola") return granolaNotes.length;
     return agentCount(agentId);
   }
 
@@ -621,6 +713,7 @@ export default function App() {
     if (agentId === "linear" && (issueStatusCounts.started || 0) >= 3) return "busy";
     if (agentId === "pr" && prs.some((pr) => pr.status === "changes" || pr.status === "failing")) return "stressed";
     if (agentId === "notes" && noteSearch) return "curious";
+    if (agentId === "granola" && granolaSearch) return "curious";
     return "calm";
   }
 
@@ -755,8 +848,10 @@ export default function App() {
               loaded={issuesLoaded}
               onAssignMe={handleAssignIssueToMe}
               onClarify={handleLinearClarificationChoice}
+              onCreateIssue={handleCreateIssue}
               onStatusChange={handleIssueStatus}
               onSync={() => fetchIssues({ force: true })}
+              saving={loading}
               statusCounts={issueStatusCounts}
               syncedAt={issuesSyncedAt}
               syncing={issuesSyncing}
@@ -772,6 +867,17 @@ export default function App() {
               onCreateTheme={handleCreateNoteTheme}
               onDeleteTheme={handleDeleteNoteTheme}
               onDeleteSubNote={handleDeleteSubNote}
+            />
+          ) : activeView === "granola" ? (
+            <GranolaList
+              configured={granolaConfigured}
+              loaded={granolaLoaded}
+              notes={granolaNotes}
+              onClearSearch={() => setGranolaSearch(null)}
+              onRefresh={() => fetchGranolaNotes({ force: true })}
+              search={granolaSearch}
+              syncedAt={granolaSyncedAt}
+              syncing={granolaSyncing}
             />
           ) : activeView === "watcher" && !initialLoad && (
             <div className="watchesLayout">
@@ -847,6 +953,7 @@ function DancePartyOverlay({ onEnd }) {
     { type: "linear", delay: 0.3 },
     { type: "pr", delay: 0.45 },
     { type: "notes", delay: 0.6 },
+    { type: "granola", delay: 0.75 },
   ];
 
   return (
@@ -1041,6 +1148,7 @@ function BohemianGroveOverlay({ onEnd }) {
     { type: "linear", delay: 0.2 },
     { type: "pr", delay: 0.4 },
     { type: "notes", delay: 0.1 },
+    { type: "granola", delay: 0.3 },
   ];
 
   return (
@@ -1141,6 +1249,7 @@ function MurderSceneOverlay({ onEnd }) {
     { type: "linear", name: "Mr. PM" },
     { type: "pr", name: "PR Boy" },
     { type: "notes", name: "Notes Guy" },
+    { type: "granola", name: "Granola Goblin" },
   ];
 
   return (
@@ -1411,6 +1520,117 @@ function NotesList({ loaded, onAddSubNote, onClearSearch, onCreateTheme, onDelet
   );
 }
 
+function GranolaList({ configured, loaded, notes, onClearSearch, onRefresh, search, syncedAt, syncing }) {
+  if (!loaded) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="granola" size={48} />
+        <p>Loading Granola notes...</p>
+      </div>
+    );
+  }
+
+  if (!configured) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="granola" size={48} />
+        <p>Granola Goblin needs GRANOLA_API_KEY.</p>
+        <button type="button" className="syncBtn granolaSyncBtn" onClick={onRefresh} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Granola"}
+        </button>
+      </div>
+    );
+  }
+
+  if (notes.length === 0) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="granola" size={48} />
+        <p>No Granola notes found yet.</p>
+        {syncedAt && <span className="syncDetail">synced {formatRelative(syncedAt)}</span>}
+        <button type="button" className="syncBtn granolaSyncBtn" onClick={onRefresh} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Granola"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="granolaLayout">
+      <div className="syncBar">
+        <span>{notes.length} recent notes{syncedAt ? ` · synced ${formatRelative(syncedAt)}` : ""}</span>
+        <button type="button" className="syncBtn granolaSyncBtn" onClick={onRefresh} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Granola"}
+        </button>
+      </div>
+
+      {search && (
+        <section className="granolaSearchResults">
+          <div className="noteSearchHead">
+            <div className="noteSearchTitle">
+              <PixelSprite type="granola" size={22} />
+              <div>
+                <h2>Meetings about {search.query}</h2>
+                <span>{search.results.length} matching notes</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="actionBtn delete noteDeleteBtn"
+              aria-label="Close Granola search results"
+              onClick={onClearSearch}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+          {search.answer && <p className="granolaAnswer">{search.answer}</p>}
+          {search.results.length > 0 ? (
+            <div className="granolaNoteList">
+              {search.results.map((note) => (
+                <GranolaNoteCard key={note.id} note={note} />
+              ))}
+            </div>
+          ) : (
+            <p className="emptySubNotes">Nothing in recent Granola notes matched that.</p>
+          )}
+        </section>
+      )}
+
+      <section className="watchSection">
+        <div className="sectionHead">
+          <h2>Recent meetings</h2>
+          <span className="badge">{notes.length}</span>
+        </div>
+        <div className="granolaNoteList">
+          {notes.map((note) => (
+            <GranolaNoteCard key={note.id} note={note} />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GranolaNoteCard({ note }) {
+  return (
+    <article className="watchCard granolaCard">
+      <PixelSprite type="granola" size={22} />
+      <div className="watchBody">
+        <div className="watchMeta">
+          <span className="watchSubject granolaId">{note.id}</span>
+          {note.ownerName && <span className="granolaOwner">{note.ownerName}</span>}
+        </div>
+        <p className="watchInstruction">{note.title}</p>
+        {note.summary && <p className="granolaSummary">{note.summary}</p>}
+        {note.excerpt && !note.summary && <p className="granolaSummary">{note.excerpt}</p>}
+        <span className="watchDue">{formatRelative(note.updatedAt || note.createdAt)}</span>
+      </div>
+    </article>
+  );
+}
+
 function TodayView({ dueWatches, inProgressIssues, prs }) {
   return (
     <div className="todayLayout">
@@ -1465,7 +1685,7 @@ function TodaySection({ area, children, count, empty, title }) {
   );
 }
 
-const STATUS_TYPE_ORDER = ["urgent", "started", "unstarted", "backlog", "completed"];
+const STATUS_TYPE_ORDER = ["backlog", "unstarted", "started", "completed", "urgent"];
 const STATUS_TYPE_LABELS = {
   urgent: "Urgent",
   started: "In Progress",
@@ -1481,9 +1701,79 @@ const STATUS_TYPE_COLORS = {
   completed: "#34d399",
 };
 
-function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onStatusChange, onSync, statusCounts, syncedAt, syncing }) {
+function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onCreateIssue, onStatusChange, onSync, saving, statusCounts, syncedAt, syncing }) {
   const [collapsedStatuses, setCollapsedStatuses] = useState({});
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [issueStatus, setIssueStatus] = useState("Todo");
   const syncDetail = `In Progress: ${statusCounts.started || 0}${syncedAt ? ` · synced ${formatRelative(syncedAt)}` : ""}`;
+
+  async function handleCreateIssue(event) {
+    event.preventDefault();
+    const title = issueTitle.trim();
+    const description = issueDescription.trim();
+    if (!title) return;
+
+    await onCreateIssue({ title, description, status: issueStatus });
+    setIssueTitle("");
+    setIssueDescription("");
+    setIssueStatus("Todo");
+    setShowCreateForm(false);
+  }
+
+  const createIssueCard = (
+    <section className="issueCreateCard">
+      {showCreateForm ? (
+        <form className="issueForm" onSubmit={handleCreateIssue}>
+          <div className="issueFormHead">
+            <PixelSprite type="linear" size={22} />
+            <div>
+              <h2>New Mr. PM task</h2>
+              <span>Assigned to you automatically.</span>
+            </div>
+          </div>
+          <input
+            value={issueTitle}
+            onChange={(event) => setIssueTitle(event.target.value)}
+            placeholder="title"
+            disabled={saving}
+            autoFocus
+          />
+          <textarea
+            value={issueDescription}
+            onChange={(event) => setIssueDescription(event.target.value)}
+            placeholder="description"
+            disabled={saving}
+            rows={4}
+          />
+          <select
+            value={issueStatus}
+            onChange={(event) => setIssueStatus(event.target.value)}
+            disabled={saving}
+          >
+            <option value="Backlog">Backlog</option>
+            <option value="Todo">Todo</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Done">Done</option>
+          </select>
+          <div className="issueFormActions">
+            <button type="button" className="actionBtn" onClick={() => setShowCreateForm(false)} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="issueSubmitBtn" disabled={saving || !issueTitle.trim()}>
+              Create task
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="issueCreateButton" onClick={() => setShowCreateForm(true)}>
+          <PixelSprite type="linear" size={22} />
+          <span>New task</span>
+        </button>
+      )}
+    </section>
+  );
 
   if (!loaded) {
     return (
@@ -1503,6 +1793,7 @@ function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onSta
         <button type="button" className="syncBtn" onClick={onSync} disabled={syncing}>
           {syncing ? "Syncing..." : "Sync Mr. PM"}
         </button>
+        {createIssueCard}
       </div>
     );
   }
@@ -1520,7 +1811,7 @@ function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onSta
   ];
 
   function toggleStatus(type) {
-    setCollapsedStatuses((prev) => ({ ...prev, [type]: !prev[type] }));
+    setCollapsedStatuses((prev) => ({ ...prev, [type]: !(prev[type] ?? true) }));
   }
 
   return (
@@ -1530,36 +1821,46 @@ function IssueList({ clarification, issues, loaded, onAssignMe, onClarify, onSta
       )}
       <div className="syncBar">
         <span>{issues.length} assigned issues · {syncDetail}</span>
-        <button type="button" className="syncBtn" onClick={onSync} disabled={syncing}>
-          {syncing ? "Syncing..." : "Sync Mr. PM"}
-        </button>
-      </div>
-      {statusTypes.map((type) => (
-        <section key={type} className={`watchSection ${type === "urgent" ? "due" : ""}`}>
-          <button
-            type="button"
-            className="sectionHead sectionToggle"
-            aria-expanded={!collapsedStatuses[type]}
-            onClick={() => toggleStatus(type)}
-          >
-            <span className={`chevron ${collapsedStatuses[type] ? "collapsed" : ""}`}>⌄</span>
-            <h2>{STATUS_TYPE_LABELS[type] || type}</h2>
-            <span className="badge">{grouped[type].length}</span>
+        <div className="syncActions">
+          <button type="button" className="syncBtn" onClick={() => setShowCreateForm(true)}>
+            New task
           </button>
-          {!collapsedStatuses[type] && (
-            <div className="watchList">
-              {grouped[type].map((issue) => (
-                <IssueCard
-                  key={issue.id}
-                  issue={issue}
-                  onAssignMe={onAssignMe}
-                  onStatusChange={onStatusChange}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      ))}
+          <button type="button" className="syncBtn" onClick={onSync} disabled={syncing}>
+            {syncing ? "Syncing..." : "Sync Mr. PM"}
+          </button>
+        </div>
+      </div>
+      {showCreateForm && createIssueCard}
+      {statusTypes.map((type) => {
+        const isCollapsed = collapsedStatuses[type] ?? true;
+
+        return (
+          <section key={type} className={`watchSection ${type === "urgent" ? "due" : ""}`}>
+            <button
+              type="button"
+              className="sectionHead sectionToggle"
+              aria-expanded={!isCollapsed}
+              onClick={() => toggleStatus(type)}
+            >
+              <span className={`chevron ${isCollapsed ? "collapsed" : ""}`}>⌄</span>
+              <h2>{STATUS_TYPE_LABELS[type] || type}</h2>
+              <span className="badge">{grouped[type].length}</span>
+            </button>
+            {!isCollapsed && (
+              <div className="watchList">
+                {grouped[type].map((issue) => (
+                  <IssueCard
+                    key={issue.id}
+                    issue={issue}
+                    onAssignMe={onAssignMe}
+                    onStatusChange={onStatusChange}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -1858,6 +2159,7 @@ function WatchCard({ compact, onDelete, onResolve, onSnooze, watch }) {
 
 function formatRelative(value) {
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
   const now = new Date();
   const diff = date - now;
 
@@ -1887,6 +2189,23 @@ function formatNoteMessage(agentName, noteResult) {
   }
 
   return `${agentName} created ${themeTitle}`;
+}
+
+function formatGranolaMessage(agentName, payload) {
+  if (payload.granolaConfigured === false) {
+    return `${agentName} needs a Granola API key`;
+  }
+
+  const result = payload.granolaResult;
+  if (result?.action === "search_granola_notes") {
+    return `${agentName} found ${result.results.length} meeting matches for ${result.query}`;
+  }
+
+  if (result?.action === "list_granola_notes") {
+    return `${agentName} synced ${result.notes.length} Granola notes`;
+  }
+
+  return `${agentName} picked this up`;
 }
 
 function formatLinearActionMessage(agentName, linearAction) {

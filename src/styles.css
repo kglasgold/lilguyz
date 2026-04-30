@@ -140,6 +140,10 @@ textarea {
   animation: scurry 2.2s ease-in-out infinite;
 }
 
+.pixelSprite[data-agent="wesley"] {
+  animation: nod 3s ease-in-out infinite;
+}
+
 @keyframes bobble {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-1.5px); }
@@ -174,6 +178,12 @@ textarea {
   25% { transform: translateX(-1px) translateY(1px); }
   50% { transform: translateX(1.5px) translateY(-1px); }
   75% { transform: translateX(-0.5px) translateY(0.5px); }
+}
+
+@keyframes nod {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  45% { transform: translateY(1px) rotate(2deg); }
+  55% { transform: translateY(1px) rotate(-1deg); }
 }
 
 /* ── Landing ── */
@@ -1057,6 +1067,184 @@ a.linearLink:hover {
   border-color: rgba(132, 204, 22, 0.35);
 }
 
+/* ── Wesley ── */
+
+.wesleyLayout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wesleyDispatchList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+a.wesleyCard {
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  padding-right: 44px;
+  border-color: rgba(203, 213, 225, 0.18);
+  background: linear-gradient(180deg, rgba(203, 213, 225, 0.08), var(--bg-raised) 44%);
+}
+
+a.wesleyCard:hover {
+  border-color: rgba(203, 213, 225, 0.32);
+}
+
+.wesleyDeleteBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.wesleyStatus {
+  color: #cbd5e1;
+}
+
+.wesleyRepo {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+}
+
+.wesleyModel {
+  font-size: 11.5px;
+  color: #cbd5e1;
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+}
+
+.wesleyModelControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.wesleyModelControl select {
+  width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  outline: none;
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.wesleyModelControl select:focus {
+  border-color: rgba(203, 213, 225, 0.35);
+  color: var(--text-primary);
+}
+
+.wesleyDispatchForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 520px);
+  border: 1px solid rgba(203, 213, 225, 0.24);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(203, 213, 225, 0.07);
+}
+
+.wesleyDispatchForm textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: rgba(10, 10, 11, 0.45);
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+}
+
+.wesleyDispatchForm textarea:focus {
+  border-color: rgba(203, 213, 225, 0.35);
+}
+
+.wesleyDispatchForm textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.wesleyDispatchActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wesleyCodeMode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wesleyCodeMode input {
+  accent-color: #cbd5e1;
+}
+
+.wesleyPreviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(203, 213, 225, 0.28);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(203, 213, 225, 0.08);
+}
+
+.wesleyPreviewText {
+  border: 1px solid rgba(203, 213, 225, 0.18);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: rgba(10, 10, 11, 0.35);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.wesleyPreviewMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.wesleyDispatchBtn {
+  align-self: flex-start;
+  border: 1px solid rgba(203, 213, 225, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  background: rgba(203, 213, 225, 0.14);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.wesleyDispatchBtn:hover:not(:disabled) {
+  border-color: rgba(203, 213, 225, 0.5);
+  background: rgba(203, 213, 225, 0.2);
+}
+
+.wesleyDispatchBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wesleySyncBtn:hover:not(:disabled) {
+  border-color: rgba(203, 213, 225, 0.35);
+}
+
 /* ── Actions ── */
 
 .watchActions {
@@ -1539,6 +1727,7 @@ a.prCard:hover {
 .dancer:nth-child(4) { animation-name: danceSlide; }
 .dancer:nth-child(5) { animation-name: danceJump; }
 .dancer:nth-child(6) { animation-name: danceBounce; }
+.dancer:nth-child(7) { animation-name: danceSlide; }
 
 .dancer .pixelSprite {
   animation: none !important;
@@ -2032,6 +2221,10 @@ a.prCard:hover {
 
 .bystander:nth-child(4) {
   animation-delay: 0.45s;
+}
+
+.bystander:nth-child(5) {
+  animation-delay: 0.6s;
 }
 
 .bystanderReaction {

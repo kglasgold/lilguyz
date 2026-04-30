@@ -52,7 +52,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -731,6 +732,115 @@ a.linearLink:hover {
   gap: 12px;
 }
 
+.noteCreateCard {
+  grid-column: 1 / -1;
+}
+
+.emptyState .noteCreateCard {
+  width: min(100%, 360px);
+}
+
+.noteCreateButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px dashed rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(245, 158, 11, 0.06);
+  color: #f59e0b;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.noteCreateButton:hover {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.noteForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.noteEntryForm {
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: rgba(10, 10, 11, 0.35);
+}
+
+.noteFormHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.noteFormHead h2 {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.noteFormHead span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.noteForm input,
+.noteForm textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: rgba(10, 10, 11, 0.45);
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+}
+
+.noteForm input:focus,
+.noteForm textarea:focus {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.noteForm input::placeholder,
+.noteForm textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.noteFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.noteSubmitBtn {
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.noteSubmitBtn:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.noteSubmitBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .noteSearchResults {
   grid-column: 1 / -1;
   display: flex;
@@ -862,6 +972,17 @@ a.linearLink:hover {
 
 .noteDeleteBtn {
   padding: 5px;
+}
+
+.noteThemeFooter {
+  display: flex;
+  flex-direction: column;
+}
+
+.noteAddBtn {
+  justify-content: center;
+  border-color: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
 }
 
 /* ── Actions ── */

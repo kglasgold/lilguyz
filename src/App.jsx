@@ -242,6 +242,10 @@ export default function App() {
     () => filteredWatches.filter((w) => w.status === "due"),
     [filteredWatches],
   );
+  const dueWatcherWatches = useMemo(
+    () => watches.filter((w) => (w.agent || "watcher") === "watcher" && w.status === "due"),
+    [watches],
+  );
   const activeWatches = useMemo(
     () => filteredWatches.filter((w) => w.status === "pending"),
     [filteredWatches],
@@ -490,6 +494,37 @@ export default function App() {
     }
   }
 
+  async function handleCreateNoteTheme({ title, body }) {
+    setLoading(true);
+    try {
+      const payload = await apiPost("/api/notes", { title, body });
+      setNotes(payload.themes || []);
+      setNotesLoaded(true);
+      setNoteSearch(null);
+      setMessage(`Created ${payload.theme?.title || title}`);
+    } catch (error) {
+      setMessage(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddSubNote(theme, body) {
+    setLoading(true);
+    try {
+      const payload = await apiPost(`/api/notes/${theme.id}/notes`, { body });
+      setNotes(payload.themes || []);
+      setNotesLoaded(true);
+      setMessage(`Added note to ${payload.theme?.title || theme.title}`);
+    } catch (error) {
+      setMessage(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleDeleteSubNote(theme, note) {
     setLoading(true);
     try {
@@ -578,7 +613,7 @@ export default function App() {
   }
 
   function todayCount() {
-    return dueWatches.length + issues.filter((i) => i.statusType === "started").length + prs.length;
+    return dueWatcherWatches.length + issues.filter((i) => i.statusType === "started").length + prs.length;
   }
 
   function agentMood(agentId) {
@@ -701,7 +736,7 @@ export default function App() {
 
           {activeView === "today" ? (
             <TodayView
-              dueWatches={dueWatches}
+              dueWatches={dueWatcherWatches}
               inProgressIssues={issues.filter((issue) => issue.statusType === "started")}
               prs={prs}
             />
@@ -731,7 +766,10 @@ export default function App() {
               themes={notes}
               loaded={notesLoaded}
               search={noteSearch}
+              saving={loading}
+              onAddSubNote={handleAddSubNote}
               onClearSearch={() => setNoteSearch(null)}
+              onCreateTheme={handleCreateNoteTheme}
               onDeleteTheme={handleDeleteNoteTheme}
               onDeleteSubNote={handleDeleteSubNote}
             />
@@ -1141,7 +1179,78 @@ function MurderSceneOverlay({ onEnd }) {
   );
 }
 
-function NotesList({ loaded, onClearSearch, onDeleteSubNote, onDeleteTheme, search, themes }) {
+function NotesList({ loaded, onAddSubNote, onClearSearch, onCreateTheme, onDeleteSubNote, onDeleteTheme, saving, search, themes }) {
+  const [showThemeForm, setShowThemeForm] = useState(false);
+  const [themeTitle, setThemeTitle] = useState("");
+  const [themeBody, setThemeBody] = useState("");
+  const [entryThemeId, setEntryThemeId] = useState(null);
+  const [entryBody, setEntryBody] = useState("");
+
+  async function handleCreateTheme(event) {
+    event.preventDefault();
+    const title = themeTitle.trim();
+    const body = themeBody.trim();
+    if (!title) return;
+
+    await onCreateTheme({ title, body });
+    setThemeTitle("");
+    setThemeBody("");
+    setShowThemeForm(false);
+  }
+
+  async function handleAddEntry(event, theme) {
+    event.preventDefault();
+    const body = entryBody.trim();
+    if (!body) return;
+
+    await onAddSubNote(theme, body);
+    setEntryBody("");
+    setEntryThemeId(null);
+  }
+
+  const createThemeCard = (
+    <section className="noteCreateCard">
+      {showThemeForm ? (
+        <form className="noteForm" onSubmit={handleCreateTheme}>
+          <div className="noteFormHead">
+            <PixelSprite type="notes" size={22} />
+            <div>
+              <h2>New notes theme</h2>
+              <span>Create a bucket for related notes.</span>
+            </div>
+          </div>
+          <input
+            value={themeTitle}
+            onChange={(event) => setThemeTitle(event.target.value)}
+            placeholder="theme title"
+            disabled={saving}
+            autoFocus
+          />
+          <textarea
+            value={themeBody}
+            onChange={(event) => setThemeBody(event.target.value)}
+            placeholder="optional first note"
+            disabled={saving}
+            rows={3}
+          />
+          <div className="noteFormActions">
+            <button type="button" className="actionBtn" onClick={() => setShowThemeForm(false)} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="noteSubmitBtn" disabled={saving || !themeTitle.trim()}>
+              Create theme
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="noteCreateButton" onClick={() => setShowThemeForm(true)}>
+          <PixelSprite type="notes" size={22} />
+          <span>New notes theme</span>
+        </button>
+      )}
+    </section>
+  );
+
   if (!loaded) {
     return (
       <div className="emptyState">
@@ -1156,12 +1265,15 @@ function NotesList({ loaded, onClearSearch, onDeleteSubNote, onDeleteTheme, sear
       <div className="emptyState">
         <PixelSprite type="notes" size={48} />
         <p>No note themes yet. Ask Notes Guy to start one.</p>
+        {createThemeCard}
       </div>
     );
   }
 
   return (
     <div className="notesLayout">
+      {createThemeCard}
+
       {search && (
         <section className="noteSearchResults">
           <div className="noteSearchHead">
@@ -1251,6 +1363,48 @@ function NotesList({ loaded, onClearSearch, onDeleteSubNote, onDeleteTheme, sear
           ) : (
             <p className="emptySubNotes">Theme created. Add a sub note whenever you are ready.</p>
           )}
+
+          <div className="noteThemeFooter">
+            {entryThemeId === theme.id ? (
+              <form className="noteForm noteEntryForm" onSubmit={(event) => handleAddEntry(event, theme)}>
+                <textarea
+                  value={entryBody}
+                  onChange={(event) => setEntryBody(event.target.value)}
+                  placeholder={`new note for ${theme.title}`}
+                  disabled={saving}
+                  rows={3}
+                  autoFocus
+                />
+                <div className="noteFormActions">
+                  <button
+                    type="button"
+                    className="actionBtn"
+                    onClick={() => {
+                      setEntryThemeId(null);
+                      setEntryBody("");
+                    }}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="noteSubmitBtn" disabled={saving || !entryBody.trim()}>
+                    Add note
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="actionBtn noteAddBtn"
+                onClick={() => {
+                  setEntryThemeId(theme.id);
+                  setEntryBody("");
+                }}
+              >
+                + Note
+              </button>
+            )}
+          </div>
         </article>
       ))}
     </div>

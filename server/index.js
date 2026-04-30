@@ -10,7 +10,7 @@ import { createIssue, fetchMyIssues, isConfigured as linearConfigured, updateIss
 import { handleLinearAction } from "./linearActions.js";
 import { handleNoteInstruction } from "./notesGuy.js";
 import { parseWatchInstruction } from "./parseWatch.js";
-import { deleteNoteTheme, deleteSubNote, listNoteThemes } from "./noteStore.js";
+import { addSubNote, createNoteTheme, deleteNoteTheme, deleteSubNote, listNoteThemes } from "./noteStore.js";
 import {
   countByAgent,
   createWatch,
@@ -129,6 +129,51 @@ app.get("/api/notes", async (_request, response, next) => {
   try {
     const themes = await listNoteThemes();
     response.json({ themes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/notes", async (request, response, next) => {
+  try {
+    const title = request.body?.title;
+    const body = request.body?.body;
+
+    if (typeof title !== "string" || !title.trim()) {
+      response.status(400).json({ error: "title is required" });
+      return;
+    }
+
+    if (body !== undefined && typeof body !== "string") {
+      response.status(400).json({ error: "body must be a string" });
+      return;
+    }
+
+    const theme = await createNoteTheme(title, body?.trim() || null);
+    const themes = await listNoteThemes();
+    response.status(201).json({ theme, themes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/notes/:themeId/notes", async (request, response, next) => {
+  try {
+    const body = request.body?.body;
+
+    if (typeof body !== "string" || !body.trim()) {
+      response.status(400).json({ error: "note body is required" });
+      return;
+    }
+
+    const theme = await addSubNote(request.params.themeId, body);
+    if (!theme) {
+      response.status(404).json({ error: "note theme not found" });
+      return;
+    }
+
+    const themes = await listNoteThemes();
+    response.status(201).json({ theme, themes });
   } catch (error) {
     next(error);
   }

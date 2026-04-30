@@ -11,6 +11,7 @@ import { createIssue, fetchMyIssues, isConfigured as linearConfigured, updateIss
 import { handleLinearAction } from "./linearActions.js";
 import { handleNoteInstruction } from "./notesGuy.js";
 import { parseWatchInstruction } from "./parseWatch.js";
+import { deleteWesleyDispatch, dispatchCursorAgent, getWesleyDefaults, isConfigured as wesleyConfigured, listWesleyDispatches, prepareWesleyDispatch } from "./wesley.js";
 import { addSubNote, createNoteTheme, deleteNoteTheme, deleteSubNote, listNoteThemes } from "./noteStore.js";
 import {
   countByAgent,
@@ -165,6 +166,27 @@ app.get("/api/prs", async (request, response, next) => {
   }
 });
 
+app.get("/api/wesley/dispatches", (_request, response) => {
+  response.set("Cache-Control", "no-store");
+  response.json({
+    dispatches: listWesleyDispatches(),
+    configured: wesleyConfigured(),
+    ...getWesleyDefaults(),
+    syncedAt: new Date().toISOString(),
+  });
+});
+
+app.delete("/api/wesley/dispatches/:id", (request, response) => {
+  response.set("Cache-Control", "no-store");
+  deleteWesleyDispatch(request.params.id);
+  response.json({
+    dispatches: listWesleyDispatches(),
+    configured: wesleyConfigured(),
+    ...getWesleyDefaults(),
+    syncedAt: new Date().toISOString(),
+  });
+});
+
 app.get("/api/granola/notes", async (request, response, next) => {
   try {
     response.set("Cache-Control", "no-store");
@@ -298,6 +320,68 @@ app.post("/api/tasks", async (request, response, next) => {
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
 
+    if (agent === "wesley") {
+      const watches = await listWatches();
+      const counts = await countByAgent();
+      const usedLLM = Boolean(llmResult);
+
+      const wesleyDefaults = getWesleyDefaults();
+
+      if (!wesleyConfigured()) {
+        response.status(201).json({
+          agent,
+          wesleyConfigured: false,
+          wesleyDispatch: null,
+          wesleyDispatches: listWesleyDispatches(),
+          wesleyAllowedModels: wesleyDefaults.allowedModels,
+          wesleyModel: wesleyDefaults.model,
+          usedLLM,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      if (!request.body?.confirmDispatch) {
+        response.status(200).json({
+          agent,
+          wesleyConfigured: true,
+          wesleyDispatch: null,
+          wesleyDispatches: listWesleyDispatches(),
+          wesleyPreview: prepareWesleyDispatch(instruction, {
+            allowCodeChanges: request.body?.allowCodeChanges === true,
+            model: request.body?.model,
+          }),
+          wesleyAllowedModels: wesleyDefaults.allowedModels,
+          wesleyModel: wesleyDefaults.model,
+          usedLLM,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      const wesleyDispatch = await dispatchCursorAgent(instruction, {
+        allowCodeChanges: request.body?.allowCodeChanges === true,
+        model: request.body?.model,
+      });
+      response.status(202).json({
+        agent,
+        wesleyConfigured: true,
+        wesleyDispatch,
+        wesleyDispatches: listWesleyDispatches(),
+        wesleyAllowedModels: wesleyDefaults.allowedModels,
+        wesleyModel: wesleyDefaults.model,
+        usedLLM,
+        watches,
+        counts,
+        watch: null,
+      });
+      return;
+    }
+
     if (agent === "granola") {
       const watches = await listWatches();
       const counts = await countByAgent();
@@ -413,6 +497,64 @@ app.post("/api/watches", async (request, response, next) => {
     const title = llmResult?.title || extractTitle(instruction);
     const assignee = llmResult?.assignee || extractAssignee(instruction);
     const description = llmResult?.description || extractDescription(instruction);
+
+    if (agent === "wesley") {
+      const watches = await listWatches();
+      const counts = await countByAgent();
+
+      const wesleyDefaults = getWesleyDefaults();
+
+      if (!wesleyConfigured()) {
+        response.status(201).json({
+          agent,
+          wesleyConfigured: false,
+          wesleyDispatch: null,
+          wesleyDispatches: listWesleyDispatches(),
+          wesleyAllowedModels: wesleyDefaults.allowedModels,
+          wesleyModel: wesleyDefaults.model,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      if (!request.body?.confirmDispatch) {
+        response.status(200).json({
+          agent,
+          wesleyConfigured: true,
+          wesleyDispatch: null,
+          wesleyDispatches: listWesleyDispatches(),
+          wesleyPreview: prepareWesleyDispatch(instruction, {
+            allowCodeChanges: request.body?.allowCodeChanges === true,
+            model: request.body?.model,
+          }),
+          wesleyAllowedModels: wesleyDefaults.allowedModels,
+          wesleyModel: wesleyDefaults.model,
+          watches,
+          counts,
+          watch: null,
+        });
+        return;
+      }
+
+      const wesleyDispatch = await dispatchCursorAgent(instruction, {
+        allowCodeChanges: request.body?.allowCodeChanges === true,
+        model: request.body?.model,
+      });
+      response.status(202).json({
+        agent,
+        wesleyConfigured: true,
+        wesleyDispatch,
+        wesleyDispatches: listWesleyDispatches(),
+        wesleyAllowedModels: wesleyDefaults.allowedModels,
+        wesleyModel: wesleyDefaults.model,
+        watches,
+        counts,
+        watch: null,
+      });
+      return;
+    }
 
     if (agent === "granola") {
       const watches = await listWatches();

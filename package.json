@@ -7,11 +7,12 @@
     "dev": "node scripts/dev.js",
     "server": "node server/index.js",
     "build": "vite build",
-    "check": "node --check electron/main.js && node --check electron/preload.js && node --check server/index.js && node --check server/watchStore.js && node --check server/noteStore.js && node --check server/notesGuy.js && node --check server/linearActions.js && node --check server/parseWatch.js && node --check scripts/dev.js && vite build",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check server/index.js && node --check server/watchStore.js && node --check server/noteStore.js && node --check server/notesGuy.js && node --check server/linearActions.js && node --check server/parseWatch.js && node --check server/granola.js && node --check server/wesley.js && node --check scripts/dev.js && vite build",
     "electron": "npm run build && electron .",
     "electron:build": "npm run build && electron-builder --mac"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.11",
     "@linear/sdk": "^82.1.0",
     "@vitejs/plugin-react": "^5.1.1",
     "express": "^5.2.1",

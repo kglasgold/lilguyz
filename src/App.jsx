@@ -8,6 +8,12 @@ const EASTER_EGG_DURATION = 30_000;
 
 const AGENTS = [
   {
+    id: "wesley",
+    name: "Wesley",
+    description: "Dispatches Cursor cloud agents.",
+    pixel: "wesley",
+  },
+  {
     id: "watcher",
     name: "Jared",
     description: "Generic reminders and timers.",
@@ -157,6 +163,25 @@ function PixelSprite({ type, size = 24 }) {
         <rect x="3" y="7" width="2" height="1" fill="#84cc16" />
       </svg>
     ),
+    wesley: (
+      <svg width={s} height={s} viewBox="0 0 8 8" shapeRendering="crispEdges">
+        <rect x="2" y="0" width="4" height="1" fill="#f8fafc" />
+        <rect x="1" y="1" width="6" height="1" fill="#e2e8f0" />
+        <rect x="1" y="2" width="6" height="1" fill="#f8fafc" />
+        <rect x="1" y="3" width="1" height="1" fill="#f8fafc" />
+        <rect x="2" y="3" width="1" height="1" fill="#1e293b" />
+        <rect x="3" y="3" width="2" height="1" fill="#f8fafc" />
+        <rect x="5" y="3" width="1" height="1" fill="#1e293b" />
+        <rect x="6" y="3" width="1" height="1" fill="#f8fafc" />
+        <rect x="1" y="4" width="6" height="1" fill="#cbd5e1" />
+        <rect x="2" y="5" width="4" height="1" fill="#475569" />
+        <rect x="0" y="5" width="2" height="1" fill="#94a3b8" />
+        <rect x="6" y="5" width="2" height="1" fill="#94a3b8" />
+        <rect x="2" y="6" width="4" height="1" fill="#334155" />
+        <rect x="2" y="7" width="1" height="1" fill="#64748b" />
+        <rect x="5" y="7" width="1" height="1" fill="#64748b" />
+      </svg>
+    ),
   };
 
   return (
@@ -172,6 +197,7 @@ const AGENT_COLORS = {
   pr: "#34d399",
   notes: "#f59e0b",
   granola: "#84cc16",
+  wesley: "#cbd5e1",
 };
 
 const PR_STATUS_LABELS = {
@@ -192,6 +218,12 @@ const PR_STATUS_COLORS = {
   failing: "#ef4444",
   draft: "#5a5a63",
   open: "#8b8b93",
+};
+
+const WESLEY_MODEL_LABELS = {
+  "composer-2-fast": "Composer 2 fast",
+  "gpt-5.5-medium-fast": "GPT 5.5 medium fast",
+  "claude-4.6-opus-medium-thinking": "Opus 4.6 medium",
 };
 
 export default function App() {
@@ -216,6 +248,15 @@ export default function App() {
   const [granolaSyncedAt, setGranolaSyncedAt] = useState(null);
   const [granolaSearch, setGranolaSearch] = useState(null);
   const [granolaConfigured, setGranolaConfigured] = useState(true);
+  const [wesleyDispatches, setWesleyDispatches] = useState([]);
+  const [wesleyLoaded, setWesleyLoaded] = useState(false);
+  const [wesleyConfigured, setWesleyConfigured] = useState(true);
+  const [wesleySyncedAt, setWesleySyncedAt] = useState(null);
+  const [wesleyModel, setWesleyModel] = useState("composer-2-fast");
+  const [wesleyAllowedModels, setWesleyAllowedModels] = useState(["composer-2-fast"]);
+  const [wesleyPreview, setWesleyPreview] = useState(null);
+  const [wesleyDraft, setWesleyDraft] = useState("");
+  const [wesleyAllowCodeChanges, setWesleyAllowCodeChanges] = useState(false);
   const [greeting, setGreeting] = useState("");
   const [message, setMessage] = useState("");
   const [lastAgent, setLastAgent] = useState(null);
@@ -295,6 +336,7 @@ export default function App() {
       void fetchIssues({ force: true });
       void fetchNotes();
       void fetchGranolaNotes({ force: true });
+      void fetchWesleyDispatches();
       void fetchGreeting();
     }
 
@@ -394,6 +436,20 @@ export default function App() {
     }
   }
 
+  async function fetchWesleyDispatches() {
+    try {
+      const payload = await apiGet("/api/wesley/dispatches");
+      setWesleyDispatches(payload.dispatches || []);
+      setWesleyConfigured(payload.configured !== false);
+      if (payload.allowedModels) setWesleyAllowedModels(payload.allowedModels);
+      if (payload.model) setWesleyModel(payload.model);
+      setWesleyLoaded(true);
+      setWesleySyncedAt(payload.syncedAt || new Date().toISOString());
+    } catch (err) {
+      console.error("Failed to fetch Wesley dispatches:", err.message);
+    }
+  }
+
   async function refreshWatches(options = {}) {
     try {
       const payload = await apiGet("/api/watches");
@@ -457,9 +513,9 @@ export default function App() {
     setMessage("");
 
     try {
-      const payload = await apiPost("/api/tasks", {
-        instruction: instruction.trim(),
-      });
+      const requestBody = { instruction: instruction.trim() };
+      if (wesleyModel.trim()) requestBody.model = wesleyModel.trim();
+      const payload = await apiPost("/api/tasks", requestBody);
       if (payload.notes) {
         setNotes(payload.notes);
         setNotesLoaded(true);
@@ -471,6 +527,21 @@ export default function App() {
       }
       if (payload.granolaConfigured !== undefined) {
         setGranolaConfigured(payload.granolaConfigured);
+      }
+      if (payload.wesleyDispatches) {
+        setWesleyDispatches(payload.wesleyDispatches);
+        setWesleyLoaded(true);
+        setWesleySyncedAt(new Date().toISOString());
+      }
+      if (payload.wesleyAllowedModels) setWesleyAllowedModels(payload.wesleyAllowedModels);
+      if (payload.wesleyModel) setWesleyModel(payload.wesleyModel);
+      if (payload.wesleyConfigured !== undefined) {
+        setWesleyConfigured(payload.wesleyConfigured);
+      }
+      if (payload.wesleyPreview) {
+        setWesleyPreview({ ...payload.wesleyPreview, instruction: instruction.trim() });
+      } else if (payload.agent === "wesley" && payload.wesleyDispatch) {
+        setWesleyPreview(null);
       }
       if (payload.granolaResult?.action === "search_granola_notes") {
         setGranolaSearch(payload.granolaResult);
@@ -515,6 +586,9 @@ export default function App() {
       } else if (payload.agent === "granola") {
         setAgentFilter("granola");
         setMessage(formatGranolaMessage(agentName, payload));
+      } else if (payload.agent === "wesley") {
+        setAgentFilter("wesley");
+        setMessage(formatWesleyMessage(agentName, payload));
       } else {
         setMessage(`${agentName} picked this up`);
       }
@@ -526,6 +600,75 @@ export default function App() {
     } catch (error) {
       setMessage(error.message);
       triggerAgentReaction(lastAgent, "failure");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmWesleyDispatch(preview) {
+    setLoading(true);
+    setMessage("");
+    try {
+      const payload = await apiPost("/api/tasks", {
+        allowCodeChanges: preview.allowCodeChanges === true,
+        instruction: preview.instruction,
+        model: preview.model,
+        confirmDispatch: true,
+      });
+      if (payload.wesleyDispatches) {
+        setWesleyDispatches(payload.wesleyDispatches);
+        setWesleyLoaded(true);
+        setWesleySyncedAt(new Date().toISOString());
+      }
+      if (payload.wesleyAllowedModels) setWesleyAllowedModels(payload.wesleyAllowedModels);
+      if (payload.wesleyModel) setWesleyModel(payload.wesleyModel);
+      setWesleyConfigured(payload.wesleyConfigured !== false);
+      setWesleyPreview(null);
+      setAgentFilter("wesley");
+      setLastAgent("wesley");
+      setMessage(formatWesleyMessage("Wesley", payload));
+      triggerAgentReaction("wesley", "success");
+    } catch (error) {
+      setMessage(error.message);
+      triggerAgentReaction("wesley", "failure");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function prepareWesleyDispatch(event) {
+    event.preventDefault();
+    const context = wesleyDraft.trim();
+    if (!context) return;
+
+    setLoading(true);
+    setMessage("");
+    try {
+      const payload = await apiPost("/api/tasks", {
+        allowCodeChanges: wesleyAllowCodeChanges,
+        instruction: `wesley dispatch this context:\n${context}`,
+        model: wesleyModel,
+      });
+      if (payload.wesleyDispatches) {
+        setWesleyDispatches(payload.wesleyDispatches);
+        setWesleyLoaded(true);
+        setWesleySyncedAt(new Date().toISOString());
+      }
+      if (payload.wesleyAllowedModels) setWesleyAllowedModels(payload.wesleyAllowedModels);
+      if (payload.wesleyModel) setWesleyModel(payload.wesleyModel);
+      setWesleyConfigured(payload.wesleyConfigured !== false);
+      if (payload.wesleyPreview) {
+        setWesleyPreview({ ...payload.wesleyPreview, instruction: `wesley dispatch this context:\n${context}` });
+        setWesleyDraft("");
+        setWesleyAllowCodeChanges(false);
+      }
+      setAgentFilter("wesley");
+      setLastAgent("wesley");
+      setMessage(formatWesleyMessage("Wesley", payload));
+      triggerAgentReaction("wesley", "success");
+    } catch (error) {
+      setMessage(error.message);
+      triggerAgentReaction("wesley", "failure");
     } finally {
       setLoading(false);
     }
@@ -545,6 +688,21 @@ export default function App() {
       const payload = await apiDelete(`/api/watches/${watch.id}`);
       setWatches(payload.watches);
       setCounts(payload.counts || {});
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteWesleyDispatch(dispatch) {
+    setLoading(true);
+    try {
+      const payload = await apiDelete(`/api/wesley/dispatches/${dispatch.id}`);
+      setWesleyDispatches(payload.dispatches || []);
+      setWesleyLoaded(true);
+      setWesleySyncedAt(payload.syncedAt || new Date().toISOString());
+      setMessage("Dismissed Wesley dispatch");
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -701,6 +859,7 @@ export default function App() {
     if (agentId === "linear") return issues.filter((i) => i.statusType !== "completed").length;
     if (agentId === "notes") return notes.length;
     if (agentId === "granola") return granolaNotes.length;
+    if (agentId === "wesley") return wesleyDispatches.length;
     return agentCount(agentId);
   }
 
@@ -714,6 +873,7 @@ export default function App() {
     if (agentId === "pr" && prs.some((pr) => pr.status === "changes" || pr.status === "failing")) return "stressed";
     if (agentId === "notes" && noteSearch) return "curious";
     if (agentId === "granola" && granolaSearch) return "curious";
+    if (agentId === "wesley" && wesleyDispatches.length > 0) return "busy";
     return "calm";
   }
 
@@ -879,6 +1039,27 @@ export default function App() {
               syncedAt={granolaSyncedAt}
               syncing={granolaSyncing}
             />
+          ) : activeView === "wesley" ? (
+            <WesleyList
+              allowedModels={wesleyAllowedModels}
+              configured={wesleyConfigured}
+              draft={wesleyDraft}
+              dispatches={wesleyDispatches}
+              loaded={wesleyLoaded}
+              model={wesleyModel}
+              allowCodeChanges={wesleyAllowCodeChanges}
+              onConfirmDispatch={confirmWesleyDispatch}
+              onAllowCodeChangesChange={setWesleyAllowCodeChanges}
+              onDraftChange={setWesleyDraft}
+              onDeleteDispatch={handleDeleteWesleyDispatch}
+              onDismissPreview={() => setWesleyPreview(null)}
+              onModelChange={setWesleyModel}
+              onPrepare={prepareWesleyDispatch}
+              onRefresh={fetchWesleyDispatches}
+              preview={wesleyPreview}
+              saving={loading}
+              syncedAt={wesleySyncedAt}
+            />
           ) : activeView === "watcher" && !initialLoad && (
             <div className="watchesLayout">
               <WatchSection
@@ -954,6 +1135,7 @@ function DancePartyOverlay({ onEnd }) {
     { type: "pr", delay: 0.45 },
     { type: "notes", delay: 0.6 },
     { type: "granola", delay: 0.75 },
+    { type: "wesley", delay: 0.9 },
   ];
 
   return (
@@ -1149,6 +1331,7 @@ function BohemianGroveOverlay({ onEnd }) {
     { type: "pr", delay: 0.4 },
     { type: "notes", delay: 0.1 },
     { type: "granola", delay: 0.3 },
+    { type: "wesley", delay: 0.5 },
   ];
 
   return (
@@ -1250,6 +1433,7 @@ function MurderSceneOverlay({ onEnd }) {
     { type: "pr", name: "PR Boy" },
     { type: "notes", name: "Notes Guy" },
     { type: "granola", name: "Granola Goblin" },
+    { type: "wesley", name: "Wesley" },
   ];
 
   return (
@@ -1628,6 +1812,243 @@ function GranolaNoteCard({ note }) {
         <span className="watchDue">{formatRelative(note.updatedAt || note.createdAt)}</span>
       </div>
     </article>
+  );
+}
+
+function WesleyModelControl({ allowedModels, model, onModelChange }) {
+  return (
+    <label className="wesleyModelControl">
+      <span>Model</span>
+      <select
+        value={model}
+        onChange={(event) => onModelChange(event.target.value)}
+      >
+        {allowedModels.map((modelId) => (
+          <option key={modelId} value={modelId}>
+            {WESLEY_MODEL_LABELS[modelId] || modelId}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function WesleyDispatchForm({ allowCodeChanges, allowedModels, draft, model, onAllowCodeChangesChange, onDraftChange, onModelChange, onPrepare, saving }) {
+  return (
+    <form className="wesleyDispatchForm" onSubmit={onPrepare}>
+      <div className="noteFormHead">
+        <PixelSprite type="wesley" size={22} />
+        <div>
+          <h2>Dispatch Wesley</h2>
+          <span>Paste Slack context, a thread, or a messy ask.</span>
+        </div>
+      </div>
+      <textarea
+        value={draft}
+        onChange={(event) => onDraftChange(event.target.value)}
+        placeholder="paste the context Wesley should turn into a cloud agent quest"
+        disabled={saving}
+        rows={5}
+      />
+      <div className="wesleyDispatchActions">
+        <WesleyModelControl allowedModels={allowedModels} model={model} onModelChange={onModelChange} />
+        <label className="wesleyCodeMode">
+          <input
+            type="checkbox"
+            checked={allowCodeChanges}
+            onChange={(event) => onAllowCodeChangesChange(event.target.checked)}
+            disabled={saving}
+          />
+          <span>Allow branch edits</span>
+        </label>
+        <button type="submit" className="wesleyDispatchBtn" disabled={saving || !draft.trim()}>
+          {saving ? "Preparing..." : "Prepare dispatch"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function WesleyList({ allowCodeChanges, allowedModels, configured, draft, dispatches, loaded, model, onAllowCodeChangesChange, onConfirmDispatch, onDeleteDispatch, onDismissPreview, onDraftChange, onModelChange, onPrepare, onRefresh, preview, saving, syncedAt }) {
+  if (!loaded) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="wesley" size={48} />
+        <p>Loading Wesley dispatches...</p>
+      </div>
+    );
+  }
+
+  if (!configured) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="wesley" size={48} />
+        <p>Wesley needs CURSOR_API_KEY.</p>
+        <span className="syncDetail">He does as you wish.</span>
+        <WesleyDispatchForm
+          allowCodeChanges={allowCodeChanges}
+          allowedModels={allowedModels}
+          draft={draft}
+          model={model}
+          onAllowCodeChangesChange={onAllowCodeChangesChange}
+          onDraftChange={onDraftChange}
+          onModelChange={onModelChange}
+          onPrepare={onPrepare}
+          saving={saving}
+        />
+        <button type="button" className="syncBtn wesleySyncBtn" onClick={onRefresh}>
+          Refresh Wesley
+        </button>
+      </div>
+    );
+  }
+
+  if (dispatches.length === 0) {
+    return (
+      <div className="emptyState">
+        <PixelSprite type="wesley" size={48} />
+        <p>He does as you wish.</p>
+        {syncedAt && <span className="syncDetail">synced {formatRelative(syncedAt)}</span>}
+        {preview ? (
+          <WesleyPreviewCard
+            preview={preview}
+            saving={saving}
+            onConfirm={() => onConfirmDispatch(preview)}
+            onDismiss={onDismissPreview}
+          />
+        ) : (
+          <WesleyDispatchForm
+            allowCodeChanges={allowCodeChanges}
+            allowedModels={allowedModels}
+            draft={draft}
+            model={model}
+            onAllowCodeChangesChange={onAllowCodeChangesChange}
+            onDraftChange={onDraftChange}
+            onModelChange={onModelChange}
+            onPrepare={onPrepare}
+            saving={saving}
+          />
+        )}
+        <button type="button" className="syncBtn wesleySyncBtn" onClick={onRefresh}>
+          Refresh Wesley
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wesleyLayout">
+      <div className="syncBar">
+        <span>{dispatches.length} dispatches{syncedAt ? ` · synced ${formatRelative(syncedAt)}` : ""}</span>
+        <div className="syncActions">
+          <button type="button" className="syncBtn wesleySyncBtn" onClick={onRefresh}>
+            Refresh Wesley
+          </button>
+        </div>
+      </div>
+      {preview ? (
+        <WesleyPreviewCard
+          preview={preview}
+          saving={saving}
+          onConfirm={() => onConfirmDispatch(preview)}
+          onDismiss={onDismissPreview}
+        />
+      ) : (
+        <WesleyDispatchForm
+          allowCodeChanges={allowCodeChanges}
+          allowedModels={allowedModels}
+          draft={draft}
+          model={model}
+          onAllowCodeChangesChange={onAllowCodeChangesChange}
+          onDraftChange={onDraftChange}
+          onModelChange={onModelChange}
+          onPrepare={onPrepare}
+          saving={saving}
+        />
+      )}
+      <section className="watchSection">
+        <div className="sectionHead">
+          <h2>Cloud quests</h2>
+          <span className="badge">{dispatches.length}</span>
+        </div>
+        <div className="wesleyDispatchList">
+          {dispatches.map((dispatch) => (
+            <WesleyDispatchCard key={dispatch.id} dispatch={dispatch} onDelete={onDeleteDispatch} />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WesleyPreviewCard({ onConfirm, onDismiss, preview, saving }) {
+  const modelLabel = WESLEY_MODEL_LABELS[preview.model] || preview.model;
+  const modeLabel = preview.allowCodeChanges ? "branch edits allowed" : "investigate only";
+
+  return (
+    <section className="wesleyPreviewCard">
+      <div className="noteSearchHead">
+        <div className="noteSearchTitle">
+          <PixelSprite type="wesley" size={22} />
+          <div>
+            <h2>As you wish?</h2>
+            <span>{modelLabel} · {preview.startingRef}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="actionBtn delete noteDeleteBtn"
+          aria-label="Dismiss Wesley dispatch preview"
+          onClick={onDismiss}
+          disabled={saving}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+      <p className="wesleyPreviewText">{preview.promptPreview}</p>
+      <div className="wesleyPreviewMeta">
+        <span>{preview.repoUrl}</span>
+        <span>{modeLabel}</span>
+        <span>secrets redacted before dispatch</span>
+      </div>
+      <button type="button" className="wesleyDispatchBtn" onClick={onConfirm} disabled={saving}>
+        {saving ? "Dispatching..." : "Dispatch agent"}
+      </button>
+    </section>
+  );
+}
+
+function WesleyDispatchCard({ dispatch, onDelete }) {
+  return (
+    <a className="watchCard wesleyCard" href={dispatch.url} target="_blank" rel="noopener noreferrer">
+      <PixelSprite type="wesley" size={22} />
+      <div className="watchBody">
+        <div className="watchMeta">
+          <span className="watchSubject wesleyStatus">{dispatch.status}</span>
+          <span className="wesleyRepo">{dispatch.startingRef}</span>
+          <span className="wesleyModel">{dispatch.allowCodeChanges ? "branch edits" : "investigate only"}</span>
+          {dispatch.model && <span className="wesleyModel">{WESLEY_MODEL_LABELS[dispatch.model] || dispatch.model}</span>}
+        </div>
+        <p className="watchInstruction">{dispatch.prompt}</p>
+        <span className="watchDue">{formatRelative(dispatch.createdAt)}</span>
+      </div>
+      <button
+        type="button"
+        className="actionBtn delete wesleyDeleteBtn"
+        aria-label="Dismiss Wesley dispatch"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onDelete(dispatch);
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
+    </a>
   );
 }
 
@@ -2206,6 +2627,22 @@ function formatGranolaMessage(agentName, payload) {
   }
 
   return `${agentName} picked this up`;
+}
+
+function formatWesleyMessage(agentName, payload) {
+  if (payload.wesleyConfigured === false) {
+    return `${agentName} needs a Cursor API key`;
+  }
+
+  if (payload.wesleyDispatch?.url) {
+    return `${agentName} dispatched a cloud agent`;
+  }
+
+  if (payload.wesleyPreview) {
+    return `${agentName} prepared a dispatch`;
+  }
+
+  return "As you wish.";
 }
 
 function formatLinearActionMessage(agentName, linearAction) {
